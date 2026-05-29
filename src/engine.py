@@ -648,141 +648,117 @@ class GameEngine:
             self.winner = alive[0]["owner"] if alive else None
 
     def _update_projectile(self, p):
-        p["x"] += p["vx"]
-        p["y"] += p["vy"]
         if p["bounce_cooldown"] > 0:
             p["bounce_cooldown"] -= 1
 
         ax, ay, aw, ah = ARENA_RECT
+        r = p["radius"]
         bounced = False
-        if p["x"] - p["radius"] < ax:
-            p["x"] = ax + p["radius"]
-            p["vx"] = -p["vx"]
-            bounced = True
-        elif p["x"] + p["radius"] > ax + aw:
-            p["x"] = ax + aw - p["radius"]
-            p["vx"] = -p["vx"]
-            bounced = True
-        if p["y"] - p["radius"] < ay:
-            p["y"] = ay + p["radius"]
-            p["vy"] = -p["vy"]
-            bounced = True
-        elif p["y"] + p["radius"] > ay + ah:
-            p["y"] = ay + ah - p["radius"]
-            p["vy"] = -p["vy"]
-            bounced = True
 
-        obstacle_hit = False
-        ox, oy = p["x"], p["y"]
-        hit_zones = set()
-        hit_bricks = []
-        for _ in range(10):
-            any_overlap = False
-            for obs in self.obstacles:
-                rx, ry, rw, rh = obs["rect"]
-                if _push_out_of_rect(p, rx, ry, rw, rh):
-                    any_overlap = True
-                    obstacle_hit = True
-                    hit_bricks.append((rx, ry))
-                    hit_zones.add(obs.get("zone", "?"))
-            if not any_overlap:
-                break
+        # Sub-step: move in increments no larger than radius to prevent tunneling
+        speed = math.hypot(p["vx"], p["vy"])
+        num_steps = max(1, math.ceil(speed / r))
+        step_vx = p["vx"] / num_steps
+        step_vy = p["vy"] / num_steps
 
-        if not obstacle_hit:
-            speed = math.hypot(p["vx"], p["vy"])
-            if speed > BRICK_SIZE * 0.4:
-                steps = max(3, int(speed / (BRICK_SIZE * 0.3)))
-                px, py = ox, oy
-                for obs in self.obstacles:
-                    rx, ry, rw, rh = obs["rect"]
-                    for si in range(1, steps):
-                        t = si / steps
-                        cx = px + (p["x"] - px) * t
-                        cy = py + (p["y"] - py) * t
-                        c_clamped = max(rx, min(cx, rx + rw))
-                        cy_clamped = max(ry, min(cy, ry + rh))
-                        cdx = cx - c_clamped
-                        cdy = cy - cy_clamped
-                        if cdx * cdx + cdy * cdy < p["radius"] * p["radius"]:
-                            p["x"] = cx
-                            p["y"] = cy
-                            obstacle_hit = True
-                            hit_zones.add(obs.get("zone", "?"))
-                            hit_bricks.append((rx, ry))
-                            break
-                    if obstacle_hit:
-                        break
-                if obstacle_hit:
-                    for _ in range(10):
-                        any_overlap = False
-                        for obs in self.obstacles:
-                            rx2, ry2, rw2, rh2 = obs["rect"]
-                            if _push_out_of_rect(p, rx2, ry2, rw2, rh2):
-                                any_overlap = True
-                        if not any_overlap:
-                            break
+        for _ in range(num_steps):
+            p["x"] += step_vx
+            p["y"] += step_vy
 
-        if obstacle_hit:
-            dx = p["x"] - ox
-            dy = p["y"] - oy
-            if dx != 0:
-                p["vx"] = abs(p["vx"]) if dx > 0 else -abs(p["vx"])
-            if dy != 0:
-                p["vy"] = abs(p["vy"]) if dy > 0 else -abs(p["vy"])
-            obstacle_wall = False
-            if p["x"] - p["radius"] < ax:
-                p["x"] = ax + p["radius"]
+            # Wall bounces
+            if p["x"] - r < ax:
+                p["x"] = ax + r
                 p["vx"] = abs(p["vx"])
-                obstacle_wall = True
-            elif p["x"] + p["radius"] >= ax + aw:
-                p["x"] = ax + aw - p["radius"]
-                p["vx"] = -abs(p["vx"])
-                obstacle_wall = True
-            if p["y"] - p["radius"] < ay:
-                p["y"] = ay + p["radius"]
-                p["vy"] = abs(p["vy"])
-                obstacle_wall = True
-            elif p["y"] + p["radius"] >= ay + ah:
-                p["y"] = ay + ah - p["radius"]
-                p["vy"] = -abs(p["vy"])
-                obstacle_wall = True
-            if obstacle_wall:
+                step_vx = abs(step_vx)
                 bounced = True
-                for _ in range(10):
-                    any_remain = False
-                    for obs in self.obstacles:
-                        rx, ry, rw, rh = obs["rect"]
-                        if _push_out_of_rect(p, rx, ry, rw, rh):
-                            any_remain = True
-                            at_horiz_wall = p["y"] + p["radius"] >= ay + ah or p["y"] - p["radius"] <= ay
-                            if at_horiz_wall:
-                                left = rx - p["radius"]
-                                right = rx + rw + p["radius"]
-                                p["x"] = left if abs(p["x"] - left) < abs(p["x"] - right) else right
-                            else:
-                                top = ry - p["radius"]
-                                bottom = ry + rh + p["radius"]
-                                p["y"] = top if abs(p["y"] - top) < abs(p["y"] - bottom) else bottom
-                    if not any_remain:
-                        break
+            elif p["x"] + r > ax + aw:
+                p["x"] = ax + aw - r
+                p["vx"] = -abs(p["vx"])
+                step_vx = -abs(step_vx)
+                bounced = True
+            if p["y"] - r < ay:
+                p["y"] = ay + r
+                p["vy"] = abs(p["vy"])
+                step_vy = abs(step_vy)
+                bounced = True
+            elif p["y"] + r > ay + ah:
+                p["y"] = ay + ah - r
+                p["vy"] = -abs(p["vy"])
+                step_vy = -abs(step_vy)
+                bounced = True
 
-            for _ in range(20):
-                any_overlap = False
+            # Obstacle collisions
+            for _ in range(5):
+                any_hit = False
                 for obs in self.obstacles:
                     rx, ry, rw, rh = obs["rect"]
-                    if _push_out_of_rect(p, rx, ry, rw, rh):
-                        any_overlap = True
-                if not any_overlap:
+                    cx = max(rx, min(p["x"], rx + rw))
+                    cy = max(ry, min(p["y"], ry + rh))
+                    dx = p["x"] - cx
+                    dy = p["y"] - cy
+                    dist_sq = dx * dx + dy * dy
+                    if dist_sq >= r * r:
+                        continue
+                    any_hit = True
+                    # Push out and reflect
+                    if dist_sq == 0:
+                        # Center inside rect — push out along shorter axis
+                        push_left = p["x"] - rx
+                        push_right = rx + rw - p["x"]
+                        push_up = p["y"] - ry
+                        push_down = ry + rh - p["y"]
+                        min_push = min(push_left, push_right, push_up, push_down)
+                        if min_push == push_left:
+                            p["x"] = rx - r
+                            p["vx"] = -abs(p["vx"])
+                            step_vx = -abs(step_vx)
+                        elif min_push == push_right:
+                            p["x"] = rx + rw + r
+                            p["vx"] = abs(p["vx"])
+                            step_vx = abs(step_vx)
+                        elif min_push == push_up:
+                            p["y"] = ry - r
+                            p["vy"] = -abs(p["vy"])
+                            step_vy = -abs(step_vy)
+                        else:
+                            p["y"] = ry + rh + r
+                            p["vy"] = abs(p["vy"])
+                            step_vy = abs(step_vy)
+                    else:
+                        dist = math.sqrt(dist_sq)
+                        nx = dx / dist
+                        ny = dy / dist
+                        p["x"] = cx + nx * r
+                        p["y"] = cy + ny * r
+                        # Reflect velocity along normal
+                        dot = p["vx"] * nx + p["vy"] * ny
+                        if dot < 0:
+                            p["vx"] -= 2 * dot * nx
+                            p["vy"] -= 2 * dot * ny
+                            step_vx = p["vx"] / num_steps
+                            step_vy = p["vy"] / num_steps
+                    bounced = True
+                    self._emit_sound("bounce", _sound_vol(p), p["owner"])
+                if not any_hit:
                     break
 
-            if DEBUG:
-                dstr = f"dx={dx:+.1f} dy={dy:+.1f}" if dx != 0 or dy != 0 else "dx=0 dy=0"
-                zstr = "+".join(sorted(hit_zones)) if hit_zones else "?"
-                print(f"  [OBS] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
-                      f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
-                      f"{dstr} r:{p['radius']} b:{p['bounces']} hits:{len(hit_bricks)} z:{zstr} "
-                      f"owner:{COLOR_LETTERS[p['owner']]}")
-            self._emit_sound("bounce", _sound_vol(p), p["owner"])
+            # Re-clamp to walls after obstacle push
+            if p["x"] - r < ax:
+                p["x"] = ax + r
+                p["vx"] = abs(p["vx"])
+                step_vx = abs(step_vx)
+            elif p["x"] + r > ax + aw:
+                p["x"] = ax + aw - r
+                p["vx"] = -abs(p["vx"])
+                step_vx = -abs(step_vx)
+            if p["y"] - r < ay:
+                p["y"] = ay + r
+                p["vy"] = abs(p["vy"])
+                step_vy = abs(step_vy)
+            elif p["y"] + r > ay + ah:
+                p["y"] = ay + ah - r
+                p["vy"] = -abs(p["vy"])
+                step_vy = -abs(step_vy)
 
         if bounced:
             p["bounces"] += 1
@@ -791,7 +767,6 @@ class GameEngine:
                       f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
                       f"r:{p['radius']} b:{p['bounces']} "
                       f"owner:{COLOR_LETTERS[p['owner']]}")
-            self._emit_sound("bounce", _sound_vol(p), p["owner"])
             if p["bounces"] >= 3:
                 p["alive"] = False
                 if DEBUG:
