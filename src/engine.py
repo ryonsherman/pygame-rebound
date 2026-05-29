@@ -186,7 +186,7 @@ class AIController:
 
     def set_difficulty(self, difficulty):
         if difficulty == "easy":
-            self.fire_interval = (90, 180)
+            self.fire_interval = (99, 198)
             self.aim_spread = 60
             self.shield_range = 100
             self.prediction_frames = 30
@@ -195,7 +195,7 @@ class AIController:
             self.obstacle_awareness = 0.3
             self.sling_threshold = 0.05
         elif difficulty == "hard":
-            self.fire_interval = (30, 90)
+            self.fire_interval = (27, 81)
             self.aim_spread = 15
             self.shield_range = 180
             self.prediction_frames = 60
@@ -471,6 +471,7 @@ class GameEngine:
         self.difficulty = difficulty
         speed_mult = {"easy": 0.9, "medium": 1.0, "hard": 1.1}.get(difficulty, 1.0)
         self.projectile_speed = PROJECTILE_SPEED * speed_mult
+        self.max_bounces = {"easy": 3, "medium": 4, "hard": 5}.get(difficulty, 3)
         self.projectiles = []
         self.castles = self._init_castles()
         if human_players is None:
@@ -797,7 +798,7 @@ class GameEngine:
                       f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
                       f"r:{p['radius']} b:{p['bounces']} "
                       f"owner:{COLOR_LETTERS[p['owner']]}")
-            if p["bounces"] >= 3:
+            if p["bounces"] >= self.max_bounces:
                 p["alive"] = False
                 if DEBUG:
                     print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{COLOR_LETTERS[p['owner']]}")
@@ -815,7 +816,7 @@ class GameEngine:
         p["vx"] = math.cos(angle) * spd
         p["vy"] = math.sin(angle) * spd
         p["bounces"] += 1
-        if p["bounces"] >= 3:
+        if p["bounces"] >= self.max_bounces:
             p["alive"] = False
             if DEBUG:
                 print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{COLOR_LETTERS[p['owner']]}")
@@ -914,7 +915,7 @@ class GameEngine:
                           f"keys:{len(hit_blockade_keys)} "
                           f"owner:{COLOR_LETTERS[p['owner']]}")
                 p["bounces"] += 1
-                if p["bounces"] >= 3:
+                if p["bounces"] >= self.max_bounces:
                     p["alive"] = False
                     if DEBUG:
                         print(f"[DEATH] id:{p['id']} cause:blockade_bounce owner:{COLOR_LETTERS[p['owner']]}")
