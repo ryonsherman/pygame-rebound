@@ -94,9 +94,18 @@ def draw_cannon(screen, center, angle, owner):
     ex = sx + math.cos(angle) * CANNON_LENGTH
     ey = sy + math.sin(angle) * CANNON_LENGTH
     color = CANNON_COLORS[owner]
-    pygame.draw.circle(screen, (120, 120, 120), mount, 6)
-    pygame.draw.line(screen, color, (sx, sy), (ex, ey), CANNON_WIDTH)
-    pygame.draw.circle(screen, color, (int(ex), int(ey)), CANNON_WIDTH // 2)
+    # Flat tip, rounded grey base
+    hw = CANNON_WIDTH / 2
+    perp_x = -math.sin(angle) * hw
+    perp_y = math.cos(angle) * hw
+    points = [
+        (sx + perp_x, sy + perp_y),
+        (sx - perp_x, sy - perp_y),
+        (ex - perp_x, ey - perp_y),
+        (ex + perp_x, ey + perp_y),
+    ]
+    pygame.draw.polygon(screen, color, points)
+    pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
 
 def draw_shield(screen, center, shield):
     if not shield["active"]:

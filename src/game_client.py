@@ -8,7 +8,7 @@ class Game:
         self.screen = screen
         self.engine = GameEngine(difficulty=difficulty, human_players=[])
         self.prev_mouse_down = False
-        self.muted = False
+        self.muted = True
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_m:

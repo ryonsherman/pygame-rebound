@@ -9,6 +9,15 @@ class Menu:
         self.mode_rects = []
         self.start_rect = None
         self.hover_idx = None
+        # Navigation: row 0 = easy/medium/hard, row 1 = online
+        self._row = 0  # 0 = difficulty, 1 = online
+        self._col = 1  # index within difficulty row (0=easy,1=medium,2=hard)
+
+    def _sync_mode(self):
+        if self._row == 0:
+            self.mode = self.mode_values[self._col]
+        else:
+            self.mode = "online"
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
@@ -24,14 +33,36 @@ class Menu:
             for i, rect in enumerate(self.mode_rects):
                 if rect.collidepoint(mx, my):
                     self.mode = self.mode_values[i]
+                    if i < 3:
+                        self._row = 0
+                        self._col = i
+                    else:
+                        self._row = 1
             if self.start_rect and self.start_rect.collidepoint(mx, my):
                 if self.mode == "online":
                     return {"online": True}
                 return self.mode
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-            if self.mode == "online":
-                return {"online": True}
-            return self.mode
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                if self.mode == "online":
+                    return {"online": True}
+                return self.mode
+            elif event.key == pygame.K_LEFT:
+                if self._row == 0:
+                    self._col = max(0, self._col - 1)
+                    self._sync_mode()
+            elif event.key == pygame.K_RIGHT:
+                if self._row == 0:
+                    self._col = min(2, self._col + 1)
+                    self._sync_mode()
+            elif event.key == pygame.K_DOWN:
+                if self._row == 0:
+                    self._row = 1
+                    self._sync_mode()
+            elif event.key == pygame.K_UP:
+                if self._row == 1:
+                    self._row = 0
+                    self._sync_mode()
         return None
 
     def draw(self, screen):
