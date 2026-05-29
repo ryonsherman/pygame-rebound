@@ -183,6 +183,9 @@ class AIController:
         self.current_angle = math.atan2(arena_cy - ccy, arena_cx - ccx)
         self.aim_point = None
         self.shield_hold = 0
+        self.sling_state = None  # None, "winding", or "sweeping"
+        self.sling_dir = 0
+        self.sling_overshoot = 0
 
     def set_difficulty(self, difficulty):
         if difficulty == "easy":
@@ -193,6 +196,8 @@ class AIController:
             self.rot_speed = 0.02
             self.bounce_chance = 0.1
             self.obstacle_awareness = 0.3
+            self.sling_chance = 0.1
+            self.sling_speed = 0.08
         elif difficulty == "hard":
             self.fire_interval = (30, 90)
             self.aim_spread = 15
@@ -201,6 +206,8 @@ class AIController:
             self.rot_speed = 0.06
             self.bounce_chance = 0.4
             self.obstacle_awareness = 1.0
+            self.sling_chance = 0.5
+            self.sling_speed = 0.15
         else:
             self.fire_interval = (60, 150)
             self.aim_spread = 35
@@ -209,6 +216,8 @@ class AIController:
             self.rot_speed = 0.04
             self.bounce_chance = 0.25
             self.obstacle_awareness = 0.8
+            self.sling_chance = 0.3
+            self.sling_speed = 0.10
 
     @staticmethod
     def _segments_intersect(x1, y1, x2, y2, x3, y3, x4, y4):
@@ -387,19 +396,51 @@ class AIController:
             target_angle = math.atan2(dy, dx)
             diff = target_angle - self.current_angle
             diff = math.atan2(math.sin(diff), math.cos(diff))
-            if abs(diff) < self.rot_speed:
-                self.current_angle = target_angle
+
+            if self.sling_state == "winding":
+                # Wind up: rotate away from target
+                self.current_angle += self.sling_dir * self.rot_speed
+                self.sling_overshoot -= self.rot_speed
+                if self.sling_overshoot <= 0:
+                    self.sling_state = "sweeping"
+            elif self.sling_state == "sweeping":
+                # Sweep through target at sling speed
+                self.current_angle -= self.sling_dir * self.sling_speed
+                # Check if we've crossed the target angle
+                new_diff = target_angle - self.current_angle
+                new_diff = math.atan2(math.sin(new_diff), math.cos(new_diff))
+                if abs(new_diff) < self.sling_speed * 1.5:
+                    # Fire now while sweeping through
+                    self.current_angle = target_angle
+                    self.sling_state = None
+                    if not my_castle["shield"]["active"]:
+                        self._fire(my_castle)
+                        print(f"{COLOR_LETTERS[self.owner]} → sling-fired at {COLOR_LETTERS[self.target]}")
+                        self.fire_timer = random.randint(*self.fire_interval)
             else:
-                self.current_angle += self.rot_speed if diff > 0 else -self.rot_speed
+                # Normal rotation toward target
+                if abs(diff) < self.rot_speed:
+                    self.current_angle = target_angle
+                else:
+                    self.current_angle += self.rot_speed if diff > 0 else -self.rot_speed
 
         my_castle["cannon_angle"] = self.current_angle
 
         self.fire_timer -= 1
-        if self.fire_timer <= 0:
+        if self.fire_timer <= 0 and self.sling_state is None:
             if not my_castle["shield"]["active"] and self.aim_point is not None:
-                self._fire(my_castle)
-                print(f"{COLOR_LETTERS[self.owner]} → fired at {COLOR_LETTERS[self.target]}")
-            self.fire_timer = random.randint(*self.fire_interval)
+                # Decide whether to sling or fire normally
+                if random.random() < self.sling_chance:
+                    # Start sling: wind up in random direction
+                    self.sling_dir = random.choice([-1, 1])
+                    self.sling_overshoot = random.uniform(0.15, 0.4)
+                    self.sling_state = "winding"
+                else:
+                    self._fire(my_castle)
+                    print(f"{COLOR_LETTERS[self.owner]} → fired at {COLOR_LETTERS[self.target]}")
+                    self.fire_timer = random.randint(*self.fire_interval)
+            else:
+                self.fire_timer = random.randint(*self.fire_interval)
 
         threat = False
         threat_from = None
