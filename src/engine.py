@@ -6,6 +6,11 @@ from config import (
     PROJECTILE_RADIUS, PROJECTILE_SPEED, MAX_PROJECTILES, MAX_BLOCKADES,
 )
 
+def _sound_vol(p):
+    return max(0.2, min(1.0, p["radius"] / PROJECTILE_RADIUS))
+
+DEBUG = False
+
 def _clamp_aim(owner, mx, my, cx, cy):
     ax, ay, aw, ah = ARENA_RECT
     if owner == 0:
@@ -39,20 +44,24 @@ def _init_bricks(cx, cy):
     total_h = rows * BRICK_SIZE
     ox = cx + (CASTLE_SIZE - total_w) // 2
     oy = cy + (CASTLE_SIZE - total_h) // 2
+    # counter-clockwise from top-right, center last
+    order = [(0, 2), (1, 2), (2, 2), (2, 1), (2, 0), (1, 0), (0, 0), (0, 1), (1, 1)]
     bricks = []
-    for i in range(BRICKS_PER_CASTLE):
-        r = i // cols
-        c = i % cols
+    for r, c in order:
         bx = ox + c * BRICK_SIZE
         by = oy + r * BRICK_SIZE
         bricks.append({"alive": True, "hp": 2, "rect": (bx, by, BRICK_SIZE, BRICK_SIZE)})
     return bricks
 
-def _make_projectile(x, y, angle, owner, color_idx):
+_ball_id_counter = 0
+
+def _make_projectile(x, y, angle, owner, color_idx, speed):
+    global _ball_id_counter
+    _ball_id_counter += 1
     return {
         "x": x, "y": y,
-        "vx": math.cos(angle) * PROJECTILE_SPEED,
-        "vy": math.sin(angle) * PROJECTILE_SPEED,
+        "vx": math.cos(angle) * speed,
+        "vy": math.sin(angle) * speed,
         "owner": owner,
         "color_idx": color_idx,
         "alive": True,
@@ -60,6 +69,7 @@ def _make_projectile(x, y, angle, owner, color_idx):
         "bounces": 0,
         "bounce_cooldown": 0,
         "ball_cd": 0,
+        "id": _ball_id_counter,
     }
 
 def _random_blockade_pos(owner):
@@ -115,22 +125,22 @@ def _init_obstacles():
     cx = ax + aw // 2
     cy = ay + ah // 2
     bs = BRICK_SIZE
-    m = 4
+    m = 3
     obs = []
 
     for i in range(4):
-        obs.append({"rect": (cx - bs // 2, ay + m + i * bs, bs, bs)})
-        obs.append({"rect": (cx - bs // 2, ay + ah - m - (i + 1) * bs, bs, bs)})
-        obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs)})
-        obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs)})
+        obs.append({"rect": (cx - bs // 2, ay + m + i * bs, bs, bs), "zone": "edge"})
+        obs.append({"rect": (cx - bs // 2, ay + ah - m - (i + 1) * bs, bs, bs), "zone": "edge"})
+        obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
+        obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
     for i in range(-2, 3):
-        obs.append({"rect": (cx + i * bs - bs // 2, cy - bs // 2, bs, bs)})
+        obs.append({"rect": (cx + i * bs - bs // 2, cy - bs // 2, bs, bs), "zone": "center"})
 
     for i in range(-2, 3):
         if i == 0:
             continue
-        obs.append({"rect": (cx - bs // 2, cy + i * bs - bs // 2, bs, bs)})
+        obs.append({"rect": (cx - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
 
     return obs
 
@@ -164,7 +174,13 @@ class AIController:
         self.retarget_timer = 0
         self.target = None
         self.aim_offset = (0, 0)
-        self.current_angle = 0
+        ax, ay, aw, ah = ARENA_RECT
+        arena_cx, arena_cy = ax + aw // 2, ay + ah // 2
+        positions = _corner_positions()
+        cx, cy = positions[owner_idx]
+        ccx = cx + CASTLE_SIZE // 2
+        ccy = cy + CASTLE_SIZE // 2
+        self.current_angle = math.atan2(arena_cy - ccy, arena_cx - ccx)
         self.aim_point = None
         self.shield_hold = 0
 
@@ -217,39 +233,126 @@ class AIController:
             return True
         return False
 
-    def _line_blocked(self, x1, y1, x2, y2):
+    def _angle_in_quadrant(self, aim_angle):
+        if self.owner == 0:
+            return -math.pi <= aim_angle <= -math.pi / 2
+        if self.owner == 1:
+            return 0 <= aim_angle <= math.pi / 2
+        if self.owner == 2:
+            return math.pi / 2 <= aim_angle <= math.pi
+        return -math.pi / 2 <= aim_angle <= 0
+
+    def _line_blocked(self, x1, y1, x2, y2, exclude=None):
         for obs in self.obstacles:
+            if exclude is not None and obs["rect"] == exclude:
+                continue
             if self._line_intersects_rect(x1, y1, x2, y2, obs["rect"]):
                 return True
         return False
 
-    def _pick_aim_point(self, target_center, my_center):
+    def _eval_brick_bounce(self, mx, my, tx, ty, rx, ry, rw, rh):
+        bcx = rx + rw / 2
+        bcy = ry + rh / 2
+        faces = []
+        if tx < bcx:
+            faces.append(("right", rx + rw))
+        elif tx > bcx:
+            faces.append(("left", rx))
+        if ty < bcy:
+            faces.append(("bottom", ry + rh))
+        elif ty > bcy:
+            faces.append(("top", ry))
+
+        for face_name, face_pos in faces:
+            if face_name in ("left", "right"):
+                wx = 2 * face_pos - tx
+                wy = ty
+            else:
+                wx = tx
+                wy = 2 * face_pos - ty
+            if self._line_blocked(mx, my, wx, wy, exclude=(rx, ry, rw, rh)):
+                continue
+            if not self._angle_in_quadrant(math.atan2(wy - my, wx - mx)):
+                continue
+            if face_name in ("left", "right"):
+                if abs(wx - mx) < 0.01:
+                    continue
+                t = (face_pos - mx) / (wx - mx)
+                hit_y = my + t * (wy - my)
+                if ry <= hit_y <= ry + rh:
+                    return (wx, wy)
+            else:
+                if abs(wy - my) < 0.01:
+                    continue
+                t = (face_pos - my) / (wy - my)
+                hit_x = mx + t * (wx - mx)
+                if rx <= hit_x <= rx + rw:
+                    return (wx, wy)
+        return None
+
+    def _find_bounce_point(self, mx, my, tx, ty, castles):
+        ax, ay, aw, ah = ARENA_RECT
+        candidates = []
+
+        dx, dy = tx - mx, ty - my
+        if abs(dx) >= abs(dy):
+            primary = "left" if dx > 0 else "right"
+            sec_a = "top" if dy > 0 else "bottom"
+            sec_b = "bottom" if dy > 0 else "top"
+            wall_order = [primary, sec_a, sec_b]
+        else:
+            primary = "top" if dy > 0 else "bottom"
+            sec_a = "left" if dx > 0 else "right"
+            sec_b = "right" if dx > 0 else "left"
+            wall_order = [primary, sec_a, sec_b]
+
+        for wall in wall_order:
+            if wall == "left":
+                wx, wy = 2 * ax - tx, ty
+            elif wall == "right":
+                wx, wy = 2 * (ax + aw) - tx, ty
+            elif wall == "top":
+                wx, wy = tx, 2 * ay - ty
+            else:
+                wx, wy = tx, 2 * (ay + ah) - ty
+            if self._line_blocked(mx, my, wx, wy):
+                continue
+            if not self._angle_in_quadrant(math.atan2(wy - my, wx - mx)):
+                continue
+            candidates.append((wx, wy, 0))
+
+        for obs in self.obstacles:
+            if obs.get("zone") != "center":
+                continue
+            result = self._eval_brick_bounce(mx, my, tx, ty, *obs["rect"])
+            if result:
+                candidates.append((*result, 1))
+
+        for c in castles:
+            for blockade in c["blockades"]:
+                if not blockade["alive"]:
+                    continue
+                for brick in blockade["bricks"]:
+                    if not brick["alive"]:
+                        continue
+                    result = self._eval_brick_bounce(mx, my, tx, ty, *brick["rect"])
+                    if result:
+                        candidates.append((*result, 2))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: x[2])
+        return (candidates[0][0], candidates[0][1])
+
+    def _pick_aim_point(self, target_center, my_center, castles):
         tx = target_center[0] + self.aim_offset[0]
         ty = target_center[1] + self.aim_offset[1]
 
-        direct_blocked = self._line_blocked(my_center[0], my_center[1], tx, ty)
-        use_bounce = False
-
-        if direct_blocked and random.random() < self.obstacle_awareness:
-            use_bounce = True
-        elif random.random() < self.bounce_chance:
-            use_bounce = True
-
-        if use_bounce:
-            ax, ay, aw, ah = ARENA_RECT
-            wall = random.choice(["left", "right", "top", "bottom"])
-            if wall == "left":
-                tx = 2 * ax - tx
-            elif wall == "right":
-                tx = 2 * (ax + aw) - tx
-            elif wall == "top":
-                ty = 2 * ay - ty
-            else:
-                ty = 2 * (ay + ah) - ty
-            if direct_blocked:
-                print(f"{COLOR_LETTERS[self.owner]} → obstacle blocked, bounce via {wall}")
-
-        self.aim_point = (tx, ty)
+        aim = self._find_bounce_point(my_center[0], my_center[1], tx, ty, castles)
+        if aim is not None:
+            self.aim_point = aim
+        else:
+            self.aim_point = (tx, ty)
 
     def update(self, castles, projectiles):
         my_castle = castles[self.owner]
@@ -273,14 +376,8 @@ class AIController:
             self.aim_offset = (random.randint(-self.aim_spread, self.aim_spread),
                                random.randint(-self.aim_spread, self.aim_spread))
             self.retarget_timer = random.randint(15, 45)
-            self._pick_aim_point(chosen[0], my_castle["center"])
-            tag = "bounce shot via " if self.aim_point and (
-                self.aim_point[0] < ARENA_RECT[0] or
-                self.aim_point[0] > ARENA_RECT[0] + ARENA_RECT[2] or
-                self.aim_point[1] < ARENA_RECT[1] or
-                self.aim_point[1] > ARENA_RECT[1] + ARENA_RECT[3]
-            ) else ""
-            print(f"{COLOR_LETTERS[self.owner]} → targeting {COLOR_LETTERS[self.target]} ({tag}{COLOR_LETTERS[chosen[1]]})")
+            self._pick_aim_point(chosen[0], my_castle["center"], castles)
+            print(f"{COLOR_LETTERS[self.owner]} → targeting {COLOR_LETTERS[self.target]} (bounce)")
 
         if self.aim_point:
             cx, cy = my_castle["center"]
@@ -299,7 +396,7 @@ class AIController:
 
         self.fire_timer -= 1
         if self.fire_timer <= 0:
-            if not my_castle["shield"]["active"]:
+            if not my_castle["shield"]["active"] and self.aim_point is not None:
                 self._fire(my_castle)
                 print(f"{COLOR_LETTERS[self.owner]} → fired at {COLOR_LETTERS[self.target]}")
             self.fire_timer = random.randint(*self.fire_interval)
@@ -309,7 +406,7 @@ class AIController:
         threat_frames = None
         cx, cy = my_castle["center"]
         for p in projectiles:
-            if not p["alive"] or p["owner"] == self.owner:
+            if not p["alive"]:
                 continue
             dx = p["x"] - cx
             dy = p["y"] - cy
@@ -359,6 +456,8 @@ class AIController:
 class GameEngine:
     def __init__(self, difficulty="hard", human_players=None):
         self.difficulty = difficulty
+        speed_mult = {"easy": 0.9, "medium": 1.0, "hard": 1.1}.get(difficulty, 1.0)
+        self.projectile_speed = PROJECTILE_SPEED * speed_mult
         self.projectiles = []
         self.castles = self._init_castles()
         if human_players is None:
@@ -373,6 +472,9 @@ class GameEngine:
 
     def _init_castles(self):
         positions = _corner_positions()
+        ax, ay, aw, ah = ARENA_RECT
+        arena_cx = ax + aw // 2
+        arena_cy = ay + ah // 2
         castles = []
         for i, (cx, cy) in enumerate(positions):
             ccx = cx + CASTLE_SIZE // 2
@@ -383,7 +485,7 @@ class GameEngine:
                 "rect": (cx, cy, CASTLE_SIZE, CASTLE_SIZE),
                 "center": (ccx, ccy),
                 "bricks": _init_bricks(cx, cy),
-                "cannon_angle": 0.0,
+                "cannon_angle": math.atan2(arena_cy - ccy, arena_cx - ccx),
                 "cannon_cooldown": 0,
                 "shield": {"active": False, "timer": 0, "cooldown_timer": 0},
                 "fire_request": None,
@@ -391,6 +493,10 @@ class GameEngine:
                 "stats": {"hits": 0, "blocks": 0},
             })
         return castles
+
+    def _emit_sound(self, event_type, base_vol, owner=None):
+        vol = min(1.0, base_vol * (1.3 if owner is not None and owner in self.human_players else 1.0))
+        self.sound_events.append({"type": event_type, "volume": vol})
 
     def handle_input(self, player_inputs):
         if self.game_over:
@@ -420,11 +526,11 @@ class GameEngine:
                 castle["fire_request"] = castle["cannon_angle"]
 
     def update(self):
+        self.sound_events.clear()
         if self.game_over:
             return
 
         self.frame += 1
-        self.sound_events.clear()
 
         for c in self.castles:
             if not c["alive"]:
@@ -440,16 +546,30 @@ class GameEngine:
                 s["cooldown_timer"] -= 1
             fr = c["fire_request"]
             if fr is not None:
-                half = CASTLE_SIZE // 2
-                dist = half + 3
                 cx, cy = c["center"]
+                h = CASTLE_SIZE / 2
+                cf = math.cos(fr)
+                sf = math.sin(fr)
+                if abs(cf) < 1e-6:
+                    tx = float('inf')
+                else:
+                    tx = h / abs(cf)
+                if abs(sf) < 1e-6:
+                    ty = float('inf')
+                else:
+                    ty = h / abs(sf)
+                dist = min(tx, ty) + PROJECTILE_RADIUS + 1
                 px = cx + math.cos(fr) * dist
                 py = cy + math.sin(fr) * dist
-                projectile = _make_projectile(px, py, fr, c["owner"], c["owner"])
+                projectile = _make_projectile(px, py, fr, c["owner"], c["owner"], self.projectile_speed)
                 self.projectiles.append(projectile)
                 c["cannon_cooldown"] = FIRE_COOLDOWN
                 c["fire_request"] = None
-                self.sound_events.append("cannon_fire")
+                self._emit_sound("cannon_fire", 1.0, c["owner"])
+                if DEBUG:
+                    print(f"[FIRE] id:{projectile['id']} owner:{COLOR_LETTERS[c['owner']]} "
+                          f"pos:({px:.1f},{py:.1f}) angle:{math.degrees(fr):.0f} "
+                          f"v:({projectile['vx']:.1f},{projectile['vy']:.1f})")
 
         for ai in self.ai:
             ai.update(self.castles, self.projectiles)
@@ -472,9 +592,11 @@ class GameEngine:
                         self._reflect_projectile(p)
                         c["shield"]["active"] = False
                         c["shield"]["cooldown_timer"] = SHIELD_COOLDOWN
-                        c["stats"]["blocks"] += 1
-                        self.sound_events.append("shield_reflect")
-                        self._spawn_blockade(c)
+                        if p["owner"] != c["owner"]:
+                            c["stats"]["blocks"] += 1
+                        self._emit_sound("shield_reflect", _sound_vol(p), p["owner"])
+                        if p["owner"] != c["owner"]:
+                            self._spawn_blockade(c)
                         break
 
         for p in self.projectiles:
@@ -501,7 +623,8 @@ class GameEngine:
                     self._bounce_balls(a, b)
                     a["ball_cd"] = 8
                     b["ball_cd"] = 8
-                    self.sound_events.append("ball_collision")
+                    owner = a["owner"] if a["owner"] in self.human_players else b["owner"]
+                    self._emit_sound("ball_collision", max(_sound_vol(a), _sound_vol(b)), owner)
 
         self._check_blockade_hits()
 
@@ -513,7 +636,11 @@ class GameEngine:
         self.projectiles = [p for p in self.projectiles if p["alive"]]
 
         while len(self.projectiles) > MAX_PROJECTILES:
-            self.projectiles.pop(0)
+            removed = self.projectiles.pop(0)
+            if DEBUG:
+                print(f"[CULL] id:{removed['id']} owner:{COLOR_LETTERS[removed['owner']]} "
+                      f"pos:({removed['x']:.1f},{removed['y']:.1f}) "
+                      f"b:{removed['bounces']} r:{removed['radius']}")
 
         alive = [c for c in self.castles if c["alive"]]
         if len(alive) <= 1 and not self.game_over:
@@ -546,27 +673,129 @@ class GameEngine:
             bounced = True
 
         obstacle_hit = False
-        for obs in self.obstacles:
-            rx, ry, rw, rh = obs["rect"]
-            ox, oy = p["x"], p["y"]
-            if _push_out_of_rect(p, rx, ry, rw, rh):
-                if p["x"] != ox:
-                    p["vx"] = -p["vx"]
-                if p["y"] != oy:
-                    p["vy"] = -p["vy"]
-                obstacle_hit = True
-                break
-        if obstacle_hit:
+        ox, oy = p["x"], p["y"]
+        hit_zones = set()
+        hit_bricks = []
+        for _ in range(10):
+            any_overlap = False
             for obs in self.obstacles:
                 rx, ry, rw, rh = obs["rect"]
-                _push_out_of_rect(p, rx, ry, rw, rh)
-            self.sound_events.append("bounce")
+                if _push_out_of_rect(p, rx, ry, rw, rh):
+                    any_overlap = True
+                    obstacle_hit = True
+                    hit_bricks.append((rx, ry))
+                    hit_zones.add(obs.get("zone", "?"))
+            if not any_overlap:
+                break
+
+        if not obstacle_hit:
+            speed = math.hypot(p["vx"], p["vy"])
+            if speed > BRICK_SIZE * 0.4:
+                steps = max(3, int(speed / (BRICK_SIZE * 0.3)))
+                px, py = ox, oy
+                for obs in self.obstacles:
+                    rx, ry, rw, rh = obs["rect"]
+                    for si in range(1, steps):
+                        t = si / steps
+                        cx = px + (p["x"] - px) * t
+                        cy = py + (p["y"] - py) * t
+                        c_clamped = max(rx, min(cx, rx + rw))
+                        cy_clamped = max(ry, min(cy, ry + rh))
+                        cdx = cx - c_clamped
+                        cdy = cy - cy_clamped
+                        if cdx * cdx + cdy * cdy < p["radius"] * p["radius"]:
+                            p["x"] = cx
+                            p["y"] = cy
+                            obstacle_hit = True
+                            hit_zones.add(obs.get("zone", "?"))
+                            hit_bricks.append((rx, ry))
+                            break
+                    if obstacle_hit:
+                        break
+                if obstacle_hit:
+                    for _ in range(10):
+                        any_overlap = False
+                        for obs in self.obstacles:
+                            rx2, ry2, rw2, rh2 = obs["rect"]
+                            if _push_out_of_rect(p, rx2, ry2, rw2, rh2):
+                                any_overlap = True
+                        if not any_overlap:
+                            break
+
+        if obstacle_hit:
+            dx = p["x"] - ox
+            dy = p["y"] - oy
+            if dx != 0:
+                p["vx"] = abs(p["vx"]) if dx > 0 else -abs(p["vx"])
+            if dy != 0:
+                p["vy"] = abs(p["vy"]) if dy > 0 else -abs(p["vy"])
+            obstacle_wall = False
+            if p["x"] - p["radius"] < ax:
+                p["x"] = ax + p["radius"]
+                p["vx"] = abs(p["vx"])
+                obstacle_wall = True
+            elif p["x"] + p["radius"] >= ax + aw:
+                p["x"] = ax + aw - p["radius"]
+                p["vx"] = -abs(p["vx"])
+                obstacle_wall = True
+            if p["y"] - p["radius"] < ay:
+                p["y"] = ay + p["radius"]
+                p["vy"] = abs(p["vy"])
+                obstacle_wall = True
+            elif p["y"] + p["radius"] >= ay + ah:
+                p["y"] = ay + ah - p["radius"]
+                p["vy"] = -abs(p["vy"])
+                obstacle_wall = True
+            if obstacle_wall:
+                bounced = True
+                for _ in range(10):
+                    any_remain = False
+                    for obs in self.obstacles:
+                        rx, ry, rw, rh = obs["rect"]
+                        if _push_out_of_rect(p, rx, ry, rw, rh):
+                            any_remain = True
+                            at_horiz_wall = p["y"] + p["radius"] >= ay + ah or p["y"] - p["radius"] <= ay
+                            if at_horiz_wall:
+                                left = rx - p["radius"]
+                                right = rx + rw + p["radius"]
+                                p["x"] = left if abs(p["x"] - left) < abs(p["x"] - right) else right
+                            else:
+                                top = ry - p["radius"]
+                                bottom = ry + rh + p["radius"]
+                                p["y"] = top if abs(p["y"] - top) < abs(p["y"] - bottom) else bottom
+                    if not any_remain:
+                        break
+
+            for _ in range(20):
+                any_overlap = False
+                for obs in self.obstacles:
+                    rx, ry, rw, rh = obs["rect"]
+                    if _push_out_of_rect(p, rx, ry, rw, rh):
+                        any_overlap = True
+                if not any_overlap:
+                    break
+
+            if DEBUG:
+                dstr = f"dx={dx:+.1f} dy={dy:+.1f}" if dx != 0 or dy != 0 else "dx=0 dy=0"
+                zstr = "+".join(sorted(hit_zones)) if hit_zones else "?"
+                print(f"  [OBS] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
+                      f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
+                      f"{dstr} r:{p['radius']} b:{p['bounces']} hits:{len(hit_bricks)} z:{zstr} "
+                      f"owner:{COLOR_LETTERS[p['owner']]}")
+            self._emit_sound("bounce", _sound_vol(p), p["owner"])
 
         if bounced:
             p["bounces"] += 1
-            self.sound_events.append("bounce")
+            if DEBUG:
+                print(f"  [WALL] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
+                      f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
+                      f"r:{p['radius']} b:{p['bounces']} "
+                      f"owner:{COLOR_LETTERS[p['owner']]}")
+            self._emit_sound("bounce", _sound_vol(p), p["owner"])
             if p["bounces"] >= 3:
                 p["alive"] = False
+                if DEBUG:
+                    print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{COLOR_LETTERS[p['owner']]}")
             elif p["bounce_cooldown"] <= 0:
                 p["radius"] = max(2, int(p["radius"] * 0.8))
                 p["vx"] *= 0.88
@@ -580,10 +809,11 @@ class GameEngine:
         spd = math.hypot(p["vx"], p["vy"])
         p["vx"] = math.cos(angle) * spd
         p["vy"] = math.sin(angle) * spd
-        p["owner"] = None
         p["bounces"] += 1
         if p["bounces"] >= 3:
             p["alive"] = False
+            if DEBUG:
+                print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{COLOR_LETTERS[p['owner']]}")
         elif p["bounce_cooldown"] <= 0:
             p["radius"] = max(2, int(p["radius"] * 0.8))
             p["vx"] *= 0.88
@@ -626,12 +856,13 @@ class GameEngine:
                 (bx, by + BRICK_SIZE, BRICK_SIZE, BRICK_SIZE),
                 (bx + BRICK_SIZE, by + BRICK_SIZE, BRICK_SIZE, BRICK_SIZE),
             ]
+            gap = BRICK_SIZE
             overlap = False
             for blockade in existing:
                 for brick in blockade["bricks"]:
                     rx, ry, rw, rh = brick["rect"]
                     for nx, ny, nw, nh in new_rects:
-                        if nx < rx + rw and rx < nx + nw and ny < ry + rh and ry < ny + nh:
+                        if nx < rx + rw + gap and rx - gap < nx + nw and ny < ry + rh + gap and ry - gap < ny + nh:
                             overlap = True
                             break
                     if overlap:
@@ -646,26 +877,57 @@ class GameEngine:
         for p in self.projectiles:
             if not p["alive"]:
                 continue
-            for c in self.castles:
-                for blockade in c["blockades"]:
-                    if not blockade["alive"]:
-                        continue
-                    for brick in blockade["bricks"]:
-                        if not brick["alive"]:
-                            continue
-                        rx, ry, rw, rh = brick["rect"]
-                        if rx <= p["x"] <= rx + rw and ry <= p["y"] <= ry + rh:
-                            brick["alive"] = False
-                            p["alive"] = False
-                            remaining = sum(1 for b in blockade["bricks"] if b["alive"])
-                            tag = "blockade destroyed" if remaining == 0 else "blockade hit"
-                            attacker = f"{COLOR_LETTERS[p['owner']]}" if p["owner"] is not None else "reflected"
-                            print(f"{COLOR_LETTERS[c['owner']]} → {tag} by {attacker} ({remaining} blocks left)")
-                            if remaining == 0:
-                                self.sound_events.append("blockade_destroyed")
-                            else:
-                                self.sound_events.append("blockade_hit")
-                            return
+            hit_any = False
+            ox, oy = p["x"], p["y"]
+            hit_blockade_keys = set()
+            for _ in range(10):
+                any_overlap = False
+                for ci, c in enumerate(self.castles):
+                    for bi, blockade in enumerate(c["blockades"]):
+                        for brick in blockade["bricks"]:
+                            if not brick["alive"]:
+                                continue
+                            rx, ry, rw, rh = brick["rect"]
+                            if _push_out_of_rect(p, rx, ry, rw, rh):
+                                any_overlap = True
+                                hit_any = True
+                                brick["alive"] = False
+                                hit_blockade_keys.add((ci, bi))
+                if not any_overlap:
+                    break
+            if hit_any:
+                dx, dy = p["x"] - ox, p["y"] - oy
+                if dx != 0:
+                    p["vx"] = abs(p["vx"]) if dx > 0 else -abs(p["vx"])
+                if dy != 0:
+                    p["vy"] = abs(p["vy"]) if dy > 0 else -abs(p["vy"])
+                if DEBUG:
+                    dstr = f"dx={dx:+.1f} dy={dy:+.1f}" if dx != 0 or dy != 0 else "dx=0 dy=0"
+                    print(f"  [BLK] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
+                          f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
+                          f"{dstr} r:{p['radius']} b:{p['bounces']} "
+                          f"keys:{len(hit_blockade_keys)} "
+                          f"owner:{COLOR_LETTERS[p['owner']]}")
+                p["bounces"] += 1
+                if p["bounces"] >= 3:
+                    p["alive"] = False
+                    if DEBUG:
+                        print(f"[DEATH] id:{p['id']} cause:blockade_bounce owner:{COLOR_LETTERS[p['owner']]}")
+                elif p["bounce_cooldown"] <= 0:
+                    p["radius"] = max(2, int(p["radius"] * 0.8))
+                    p["vx"] *= 0.88
+                    p["vy"] *= 0.88
+                    p["bounce_cooldown"] = 15
+                self._emit_sound("bounce", _sound_vol(p), p["owner"])
+                for ci, bi in hit_blockade_keys:
+                    blockade = self.castles[ci]["blockades"][bi]
+                    remaining = sum(1 for b in blockade["bricks"] if b["alive"])
+                    tag = "blockade destroyed" if remaining == 0 else "blockade hit"
+                    attacker = f"{COLOR_LETTERS[p['owner']]}" if p["owner"] is not None else "reflected"
+                    print(f"{COLOR_LETTERS[ci]} → {tag} by {attacker} ({remaining} blocks left)")
+                    vol = _sound_vol(p)
+                    event = "blockade_destroyed" if remaining == 0 else "blockade_hit"
+                    self._emit_sound(event, vol, p["owner"])
 
     def _damage_castle(self, castle, projectile, attacker):
         if attacker is not None:
@@ -677,24 +939,28 @@ class GameEngine:
                 if destroyed:
                     brick["alive"] = False
                 projectile["alive"] = False
+                if DEBUG:
+                    print(f"[DEATH] id:{projectile['id']} cause:castle_hit "
+                          f"owner:{COLOR_LETTERS[projectile['owner']]} target:{COLOR_LETTERS[castle['owner']]}")
                 remaining = sum(1 for b in castle["bricks"] if b["alive"])
                 tag = " destroyed" if destroyed else " cracked"
                 attacker_tag = f"{COLOR_LETTERS[attacker]}" if attacker is not None else "reflected"
                 print(f"{COLOR_LETTERS[castle['owner']]} → HIT by {attacker_tag}{tag} ({remaining} blocks left)")
-                if destroyed:
-                    self.sound_events.append("brick_destroy")
-                else:
-                    self.sound_events.append("brick_crack")
+                event = "brick_destroy" if destroyed else "brick_crack"
+                self._emit_sound(event, _sound_vol(projectile), attacker)
                 if remaining == 0:
-                    self.sound_events.append("castle_collapse")
+                    self._emit_sound("castle_collapse", 1.0)
                     castle["alive"] = False
+                    removed_ids = [p["id"] for p in self.projectiles if p["owner"] == castle["owner"]]
                     self.projectiles = [p for p in self.projectiles if p["owner"] != castle["owner"]]
+                    if DEBUG and removed_ids:
+                        print(f"[DEATH] ids:{removed_ids} cause:castle_collapse owner:{COLOR_LETTERS[castle['owner']]}")
                     print(f"{COLOR_LETTERS[castle['owner']]} → OUT")
                     alive = [c for c in self.castles if c["alive"]]
                     if len(alive) == 1:
                         self.game_over = True
                         self.winner = alive[0]["owner"]
-                        self.sound_events.append("victory")
+                        self._emit_sound("victory", 1.0)
                         print(f"{COLOR_LETTERS[self.winner]} → VICTORY!")
                 return
 
@@ -714,6 +980,7 @@ class GameEngine:
                     "bricks": [dict(br) for br in b["bricks"]],
                 } for b in c["blockades"]],
                 "stats": dict(c["stats"]),
+                "human": c["owner"] in self.human_players,
             } for c in self.castles],
             "projectiles": [{
                 "x": p["x"], "y": p["y"],

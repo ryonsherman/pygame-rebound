@@ -2,7 +2,7 @@ import os
 import random
 import pygame
 
-SOUND_DIR = os.path.dirname(os.path.abspath(__file__))
+SOUND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sounds")
 
 _initialized = False
 _sounds = {}
@@ -43,6 +43,14 @@ def play_sound_events(state):
     if not _sounds:
         return
     for event in state.get("sound_events", []):
-        variants = _sounds.get(event)
+        if isinstance(event, str):
+            event_type, volume = event, 1.0
+        else:
+            event_type, volume = event["type"], event.get("volume", 1.0)
+        variants = _sounds.get(event_type)
         if variants:
-            random.choice(variants).play()
+            snd = random.choice(variants)
+            ch = pygame.mixer.find_channel()
+            if ch:
+                ch.set_volume(volume)
+                ch.play(snd)

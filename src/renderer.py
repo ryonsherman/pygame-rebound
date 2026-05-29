@@ -8,11 +8,15 @@ from config import (
     BG_COLOR, ARENA_COLOR, ARENA_WALL_COLOR,
 )
 
-def draw_game(screen, state):
+def draw_game(screen, state, my_slot=None):
     screen.fill(BG_COLOR)
     draw_arena(screen, state)
+    draw_title(screen)
     for c in state["castles"]:
-        draw_castle(screen, c)
+        draw_castle(screen, c, my_slot)
+    for c in state["castles"]:
+        for blockade in c.get("blockades", []):
+            draw_blockade(screen, blockade, c["owner"])
     draw_stats(screen, state["castles"])
     for p in state["projectiles"]:
         if p["alive"]:
@@ -25,13 +29,19 @@ def draw_arena(screen, state):
     pygame.draw.rect(screen, ARENA_COLOR, (ax, ay, aw, ah))
     pygame.draw.rect(screen, ARENA_WALL_COLOR, (ax, ay, aw, ah), 3)
     cx, cy = ax + aw // 2, ay + ah // 2
-    pygame.draw.line(screen, ARENA_WALL_COLOR, (cx, ay), (cx, ay + ah), 1)
-    pygame.draw.line(screen, ARENA_WALL_COLOR, (ax, cy), (ax + aw, cy), 1)
+    pygame.draw.line(screen, ARENA_WALL_COLOR, (cx, ay + 1), (cx, ay + ah - 1), 1)
+    pygame.draw.line(screen, ARENA_WALL_COLOR, (ax + 1, cy), (ax + aw - 1, cy), 1)
     for o in state.get("obstacles", []):
         pygame.draw.rect(screen, (100, 100, 110), o["rect"])
         pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
 
-def draw_castle(screen, castle):
+def draw_title(screen):
+    font = pygame.font.SysFont(None, 30, bold=True)
+    text = font.render("REBOUND", True, ARENA_WALL_COLOR)
+    rect = text.get_rect(center=(WINDOW_WIDTH // 2, 20))
+    screen.blit(text, rect)
+
+def draw_castle(screen, castle, my_slot=None):
     if not castle["alive"]:
         return
     center = castle["center"]
@@ -42,10 +52,10 @@ def draw_castle(screen, castle):
     pygame.draw.rect(screen, base_color, r, 2)
     for brick in castle["bricks"]:
         draw_brick(screen, brick, owner)
-    for blockade in castle.get("blockades", []):
-        draw_blockade(screen, blockade, owner)
     draw_cannon(screen, center, castle["cannon_angle"], owner)
     draw_shield(screen, center, castle["shield"])
+    if castle.get("human"):
+        draw_crown(screen, center, owner == my_slot)
 
 def draw_brick(screen, brick, owner):
     if not brick["alive"]:
@@ -100,6 +110,19 @@ def draw_shield(screen, center, shield):
     screen.blit(alpha_tint, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
     screen.blit(s, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
 
+def draw_crown(screen, center, defined=True):
+    cx, cy = center
+    cy -= CASTLE_SIZE // 2 + 6
+    s = pygame.Surface((30, 16), pygame.SRCALPHA)
+    pts = [(4, 14), (0, 8), (7, 4), (10, 10), (15, 0), (20, 10), (23, 4), (30, 8), (26, 14)]
+    if defined:
+        pygame.draw.polygon(s, (255, 215, 0, 200), pts)
+        pygame.draw.polygon(s, (200, 160, 0, 240), pts, 2)
+    else:
+        pygame.draw.polygon(s, (200, 180, 80, 120), pts)
+        pygame.draw.polygon(s, (255, 215, 0, 180), pts, 1)
+    screen.blit(s, (cx - 15, cy))
+
 def draw_projectile(screen, p):
     pygame.draw.circle(screen, PROJECTILE_COLORS[p["color_idx"]],
                        (int(p["x"]), int(p["y"])), p["radius"])
@@ -107,22 +130,20 @@ def draw_projectile(screen, p):
 WINNER_NAMES = ["Red", "Blue", "Green", "Yellow"]
 
 def draw_stats(screen, castles):
-    font = pygame.font.SysFont(None, 20)
     ax, ay, aw, ah = ARENA_RECT
+    font = pygame.font.SysFont(None, 20)
     for c in castles:
-        if not c["alive"]:
-            continue
         h = c["stats"]["hits"]
         b = c["stats"]["blocks"]
         owner = c["owner"]
-        color = CASTLE_COLORS[owner]
-        cx, cy = c["center"]
-        if owner in (0, 2):
-            x = ax + aw + 6
+        color = BRICK_COLORS[owner]
+        cx, _ = c["center"]
+        if owner in (1, 2):
+            y = ay - 40
         else:
-            x = ax - 56
-        screen.blit(font.render(f"H:{h}", True, color), (x, cy - 16))
-        screen.blit(font.render(f"B:{b}", True, color), (x, cy))
+            y = ay + ah + 8
+        screen.blit(font.render(f"H:{h}", True, color), (cx - 18, y))
+        screen.blit(font.render(f"B:{b}", True, color), (cx - 18, y + 18))
 
 def draw_game_over(screen, state):
     w = state["winner"]
