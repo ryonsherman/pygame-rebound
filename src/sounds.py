@@ -31,7 +31,7 @@ def init():
         variants = [f"{stem}.ogg", f"{stem}_h.ogg", f"{stem}_l.ogg"]
         loaded = []
         for v in variants:
-            path = os.path.join(SOUND_DIR, "sounds", v)
+            path = os.path.join(SOUND_DIR, v)
             if os.path.exists(path):
                 loaded.append(pygame.mixer.Sound(path))
         if loaded:

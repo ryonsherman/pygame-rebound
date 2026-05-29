@@ -35,7 +35,7 @@ class Game:
         state = self.engine.get_state()
         if not self.muted:
             play_sound_events(state)
-        draw_game(screen, state)
+        draw_game(screen, state, my_slot=0)
         if self.muted:
             font = pygame.font.SysFont(None, 24)
             text = font.render("MUTED", True, (200, 200, 200))

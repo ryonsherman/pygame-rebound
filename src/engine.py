@@ -980,7 +980,7 @@ class GameEngine:
                     "bricks": [dict(br) for br in b["bricks"]],
                 } for b in c["blockades"]],
                 "stats": dict(c["stats"]),
-                "human": c["owner"] in self.human_players,
+                "human": c["owner"] in self.human_players or c["owner"] == 0,
             } for c in self.castles],
             "projectiles": [{
                 "x": p["x"], "y": p["y"],
