@@ -486,6 +486,7 @@ class GameEngine:
                 "center": (ccx, ccy),
                 "bricks": _init_bricks(cx, cy),
                 "cannon_angle": math.atan2(arena_cy - ccy, arena_cx - ccx),
+                "prev_cannon_angle": math.atan2(arena_cy - ccy, arena_cx - ccx),
                 "cannon_cooldown": 0,
                 "shield": {"active": False, "timer": 0, "cooldown_timer": 0},
                 "fire_request": None,
@@ -535,6 +536,16 @@ class GameEngine:
         for c in self.castles:
             if not c["alive"]:
                 continue
+            # Track angular velocity for cannon sling
+            angle_diff = c["cannon_angle"] - c["prev_cannon_angle"]
+            # Normalize to [-pi, pi]
+            if angle_diff > math.pi:
+                angle_diff -= 2 * math.pi
+            elif angle_diff < -math.pi:
+                angle_diff += 2 * math.pi
+            c["angular_vel"] = angle_diff
+            c["prev_cannon_angle"] = c["cannon_angle"]
+
             if c["cannon_cooldown"] > 0:
                 c["cannon_cooldown"] -= 1
             s = c["shield"]
@@ -562,6 +573,12 @@ class GameEngine:
                 px = cx + math.cos(fr) * dist
                 py = cy + math.sin(fr) * dist
                 projectile = _make_projectile(px, py, fr, c["owner"], c["owner"], self.projectile_speed)
+                # Add cannon sling momentum (tangential velocity at tip)
+                omega = c.get("angular_vel", 0)
+                tip_speed = omega * dist
+                # Tangential direction is perpendicular to the cannon angle
+                projectile["vx"] += -math.sin(fr) * tip_speed
+                projectile["vy"] += math.cos(fr) * tip_speed
                 self.projectiles.append(projectile)
                 c["cannon_cooldown"] = FIRE_COOLDOWN
                 c["fire_request"] = None
