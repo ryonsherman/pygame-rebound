@@ -55,9 +55,10 @@ class GameRoom:
             if self.status == "playing":
                 self.engine.add_ai(slot)
                 print(f"[ROOM {self.game_id}] Player slot {slot} left — AI takeover")
-                if not self.real_players and not self.admin_created:
+                # Close room if: no players at all, OR (no real players AND not admin-created)
+                if not self.players or (not self.real_players and not self.admin_created):
                     self.status = "finished"
-                    print(f"[ROOM {self.game_id}] No real players — closing")
+                    print(f"[ROOM {self.game_id}] No players remaining — closing")
             else:
                 print(f"[ROOM {self.game_id}] Player slot {slot} left")
                 if not self.players:
