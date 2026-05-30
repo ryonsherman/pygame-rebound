@@ -61,10 +61,12 @@ def _raise_window():
 HELP_TEXT = """
 Commands:
   games          List active games
+  list <id>      List players/bots in a specific game
   join [id]      Join a game as a player (takes an open slot). Omits id to auto-join only game
   spectate [id]  Watch a game (opens pygame window). Omits id to auto-spectate only game
   bots [diff]    Spawn 4 bots into a match (default: medium)
   kick <id> <s>  Kick player in slot <s> from game <id>
+  kill <id>      Kill a game room (kicks all players/bots, removes room)
   stop           Gracefully stop the server
   help           Show this help
   quit / exit    Exit admin shell
@@ -90,8 +92,38 @@ async def cmd_games(nc, password=None):
         return
     for g in games:
         slots_str = ",".join(str(s) for s in g["slots"])
+        admin_tag = " [admin]" if g.get("admin_created") else ""
         print(f"  {g['game_id']}  {g['status']:8s}  {g['difficulty']:6s}  "
-              f"players:[{slots_str}]  frame:{g['frame']}")
+              f"players:[{slots_str}]{admin_tag}  frame:{g['frame']}")
+
+
+async def cmd_list(nc, game_id, password=None):
+    """List players/bots in a specific game room."""
+    full_game_id, status = await _check_game(nc, game_id, password)
+    if full_game_id is None:
+        if status == "ambiguous":
+            print("  Error: Multiple games match. Use: list <game_id>")
+        else:
+            print("  Error: No active games found. Use: list <game_id>")
+        return
+    
+    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password), timeout=REQUEST_TIMEOUT)
+    data = decode_msg(msg.data)
+    if not data.get("ok"):
+        print(f"  Error: {data.get('error')}")
+        return
+    
+    games = data.get("games", [])
+    room = next((g for g in games if g["game_id"] == full_game_id), None)
+    if not room:
+        print(f"  Error: Game {full_game_id} not found")
+        return
+    
+    print(f"  Game {full_game_id} ({room['status']}, {room['difficulty']}):")
+    print(f"    Slots occupied: {sorted(room['slots'])}")
+    print(f"    Open slots: {sorted(room['open_slots'])}")
+    print(f"    Admin-created: {room.get('admin_created', False)}")
+    print(f"    Frame: {room['frame']}")
 
 
 async def _check_game(nc, game_id, password=None):
@@ -413,9 +445,9 @@ async def main():
                 print(HELP_TEXT)
             elif cmd == "games":
                 await cmd_games(nc, password)
-            elif cmd == "stop":
-                await cmd_stop(nc, password)
-                break
+            elif cmd == "list":
+                gid_input = parts[1] if len(parts) > 1 else None
+                await cmd_list(nc, gid_input, password)
             elif cmd == "kick":
                 if len(parts) < 3:
                     print("  Usage: kick <game_id> <slot>")
@@ -447,6 +479,24 @@ async def main():
             elif cmd == "spectate":
                 gid_input = parts[1] if len(parts) > 1 else None
                 await cmd_spectate(nc, gid_input, password)
+            elif cmd == "kill":
+                gid_input = parts[1] if len(parts) > 1 else None
+                if not gid_input:
+                    print("  Usage: kill <game_id>")
+                else:
+                    full_gid, status = await _check_game(nc, gid_input, password)
+                    if status == "ambiguous":
+                        print(f"  Ambiguous ID '{gid_input}' — be more specific.")
+                    elif full_gid is None:
+                        print(f"  Game '{gid_input}' not found.")
+                    else:
+                        payload = {"game_id": full_gid}
+                        msg = await nc.request(SUBJECT_ADMIN_KILL, _signed(payload, password), timeout=REQUEST_TIMEOUT)
+                        data = decode_msg(msg.data)
+                        if data.get("ok"):
+                            print(f"  Killed game {full_gid}")
+                        else:
+                            print(f"  Error: {data.get('error')}")
             else:
                 print(f"  Unknown command: {cmd}")
                 print("  Type 'help' for available commands")

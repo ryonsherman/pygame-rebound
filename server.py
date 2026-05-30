@@ -134,6 +134,7 @@ class GameServer:
         await self.nc.subscribe(SUBJECT_ADMIN_STOP, cb=self._on_admin_stop)
         await self.nc.subscribe(SUBJECT_ADMIN_KICK, cb=self._on_admin_kick)
         await self.nc.subscribe(SUBJECT_ADMIN_JOIN, cb=self._on_admin_join)
+        await self.nc.subscribe(SUBJECT_ADMIN_KILL, cb=self._on_admin_kill)
         await self.nc.subscribe(f"{NATS_PREFIX}.game.*.input.>", cb=self._on_input)
         await self.nc.subscribe(f"{NATS_PREFIX}.game.*.leave", cb=self._on_leave)
         print("[SERVER] Matchmaking active — waiting for players...")
@@ -270,6 +271,7 @@ class GameServer:
                 "slots": sorted(room.players.keys()),
                 "open_slots": sorted(room.open_slots),
                 "frame": room.frame,
+                "admin_created": room.admin_created,
             })
         await msg.respond(encode_msg({"ok": True, "games": games}))
 
@@ -325,6 +327,28 @@ class GameServer:
             slot = room.assign_slot()
             await msg.respond(encode_msg({"ok": True, "game_id": game_id, "slot": slot}))
             print(f"[ROOM {game_id}] Admin joined as slot {slot}")
+        except Exception as e:
+            await msg.respond(encode_msg({"ok": False, "error": str(e)}))
+
+    async def _on_admin_kill(self, msg):
+        data = self._check_auth(msg)
+        if data is None:
+            await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
+            return
+        try:
+            game_id = data.get("game_id")
+            room = self.rooms.get(game_id)
+            if not room:
+                await msg.respond(encode_msg({"ok": False, "error": "Game not found"}))
+                return
+            # Notify all players they're kicked (bots will clean up)
+            for slot in list(room.players.keys()):
+                room.handle_leave(slot)
+                await self.nc.publish(sub_game(game_id, "kicked", str(slot)), b"")
+            # Remove the room
+            del self.rooms[game_id]
+            await msg.respond(encode_msg({"ok": True, "game_id": game_id}))
+            print(f"[ROOM {game_id}] Killed by admin")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
