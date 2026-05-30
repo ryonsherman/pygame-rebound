@@ -129,6 +129,14 @@ rebound-game/
 
 The engine processes input via `handle_input({player_idx: {...}})` and advances one frame per `update()` call. State is read via `get_state()`, which returns a trivially serializable dict.
 
+### Multiplayer (NATS)
+
+The multiplayer server (`server.py`) communicates via [NATS](https://nats.io/) pub/sub messaging. Game state is serialized as base64-encoded JSON — this obscures payloads from casual inspection on shared NATS servers without the overhead of encryption. The server broadcasts state at 20Hz and accepts player input at 60Hz.
+
+- `make nats` — Start a local NATS server (localhost only)
+- `make server` — Start the game server (connects to NATS)
+- `NATS_URL` in `config.py` controls the NATS connection address
+
 ### Rendering
 
 `src/renderer.py` takes the engine's state dict and draws the current frame using `pygame.draw` primitives. Cannons have a flat tip (muzzle) and a rounded grey base.
