@@ -1,7 +1,16 @@
 import pygame
 from src.engine import GameEngine
-from src.renderer import draw_game
+from src.renderer import draw_game, draw_game_direct, _get_font
 from src.sounds import play_sound_events
+
+# Pre-rendered muted indicator (cached on first use)
+_muted_surface = None
+
+def _get_muted_surface():
+    global _muted_surface
+    if _muted_surface is None:
+        _muted_surface = _get_font(24).render("MUTED (M)", True, (200, 200, 200))
+    return _muted_surface
 
 class Game:
     def __init__(self, screen, difficulty="hard", spectate=False):
@@ -35,17 +44,16 @@ class Game:
         self.engine.update()
 
     def draw(self, screen):
-        state = self.engine.get_state()
-        if not self.muted:
-            play_sound_events(state)
+        # Play sounds from engine's sound_events directly (no state copy needed)
+        if not self.muted and self.engine.sound_events:
+            play_sound_events({"sound_events": self.engine.sound_events})
+        # Render directly from engine — avoids get_state() copy every frame
         my_slot = None if self.spectate else 0
-        draw_game(screen, state, my_slot=my_slot)
+        draw_game_direct(screen, self.engine, my_slot=my_slot)
         if self.muted:
-            font = pygame.font.SysFont(None, 24)
-            text = font.render("MUTED (M)", True, (200, 200, 200))
-            screen.blit(text, (10, 10))
+            screen.blit(_get_muted_surface(), (10, 10))
         if self.spectate and self.engine.game_over:
-            font = pygame.font.SysFont(None, 48)
+            font = _get_font(48)
             colors = ["Red", "Blue", "Green", "Yellow"]
             txt = font.render(f"{colors[self.engine.winner]} Wins!", True, (255, 255, 255))
             screen.blit(txt, txt.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2)))

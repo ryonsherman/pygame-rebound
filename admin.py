@@ -20,6 +20,16 @@ from src.nats_common import (
 )
 
 
+_font_cache = {}
+
+
+def _get_font(size):
+    """Return a cached pygame SysFont for the given size."""
+    if size not in _font_cache:
+        _font_cache[size] = pygame.font.SysFont(None, size)
+    return _font_cache[size]
+
+
 def _fix_terminal():
     """Restore terminal settings that pygame/SDL may have broken."""
     try:
@@ -196,15 +206,15 @@ async def cmd_join(nc, game_id, password=None):
             if not muted:
                 play_sound_events(latest_state)
             draw_game(screen, latest_state, my_slot=slot)
-            fps_text = pygame.font.SysFont(None, 24).render(f"{int(clock.get_fps())} fps", True, (200, 200, 200))
+            fps_text = _get_font(24).render(f"{int(clock.get_fps())} fps", True, (200, 200, 200))
             screen.blit(fps_text, (WINDOW_WIDTH - fps_text.get_width() - 10, 10))
             if muted:
-                screen.blit(pygame.font.SysFont(None, 24).render("MUTED", True, (200, 200, 200)), (10, 10))
+                screen.blit(_get_font(24).render("MUTED", True, (200, 200, 200)), (10, 10))
             if latest_state.get("game_over"):
                 running = False
         else:
             screen.fill(BG_COLOR)
-            font = pygame.font.SysFont(None, 32)
+            font = _get_font(32)
             screen.blit(font.render("Waiting for state...", True, (150, 150, 170)),
                         (WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2))
 
@@ -284,13 +294,13 @@ async def cmd_spectate(nc, game_id):
             if not muted:
                 play_sound_events(latest_state)
             draw_game(screen, latest_state, my_slot=None)
-            fps_text = pygame.font.SysFont(None, 24).render(f"{int(clock.get_fps())} fps", True, (200, 200, 200))
+            fps_text = _get_font(24).render(f"{int(clock.get_fps())} fps", True, (200, 200, 200))
             screen.blit(fps_text, (WINDOW_WIDTH - fps_text.get_width() - 10, 10))
             if muted:
-                screen.blit(pygame.font.SysFont(None, 24).render("MUTED", True, (200, 200, 200)), (10, 10))
+                screen.blit(_get_font(24).render("MUTED", True, (200, 200, 200)), (10, 10))
         else:
             screen.fill(BG_COLOR)
-            font = pygame.font.SysFont(None, 32)
+            font = _get_font(32)
             screen.blit(font.render("Waiting for state...", True, (150, 150, 170)),
                         (WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2))
 

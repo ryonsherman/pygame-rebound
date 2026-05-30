@@ -245,17 +245,19 @@ class GameServer:
             pass
 
     def _check_auth(self, msg):
-        """Validate admin auth. Returns True if authorized."""
-        if not self.password:
-            return True
+        """Validate admin auth. Returns decoded data if authorized, None otherwise."""
         try:
             data = decode_msg(msg.data)
-            return verify_auth(data, self.password)
         except Exception:
-            return False
+            return None
+        if not self.password:
+            return data
+        if verify_auth(data, self.password):
+            return data
+        return None
 
     async def _on_admin_list(self, msg):
-        if not self._check_auth(msg):
+        if self._check_auth(msg) is None:
             await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
             return
         games = []
@@ -272,7 +274,7 @@ class GameServer:
         await msg.respond(encode_msg({"ok": True, "games": games}))
 
     async def _on_admin_stop(self, msg):
-        if not self._check_auth(msg):
+        if self._check_auth(msg) is None:
             await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
             return
         await msg.respond(encode_msg({"ok": True, "message": "Server shutting down"}))
@@ -281,11 +283,11 @@ class GameServer:
         asyncio.get_event_loop().stop()
 
     async def _on_admin_kick(self, msg):
-        if not self._check_auth(msg):
+        data = self._check_auth(msg)
+        if data is None:
             await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
             return
         try:
-            data = decode_msg(msg.data)
             game_id = data.get("game_id")
             slot = data.get("slot")
             room = self.rooms.get(game_id)
@@ -304,11 +306,11 @@ class GameServer:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
     async def _on_admin_join(self, msg):
-        if not self._check_auth(msg):
+        data = self._check_auth(msg)
+        if data is None:
             await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
             return
         try:
-            data = decode_msg(msg.data)
             game_id = data.get("game_id")
             room = self.rooms.get(game_id)
             if not room:

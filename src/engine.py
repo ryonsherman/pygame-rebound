@@ -488,6 +488,8 @@ class GameEngine:
             human_players = [0]
         self.human_players = set(human_players)
         self.obstacles = _init_obstacles()
+        # Pre-serialized obstacle list for get_state() — obstacles never change
+        self._obstacles_snapshot = [dict(o) for o in self.obstacles]
         self.ai = [AIController(i, difficulty, self.obstacles) for i in range(4) if i not in self.human_players]
         self.difficulty = difficulty
         self.frame = 0
@@ -695,7 +697,7 @@ class GameEngine:
             for b in c["blockades"]:
                 b["alive"] = any(br["alive"] for br in b["bricks"])
 
-        self.projectiles = [p for p in self.projectiles if p["alive"]]
+        self.projectiles[:] = [p for p in self.projectiles if p["alive"]]
 
         while len(self.projectiles) > self.max_projectiles:
             removed = self.projectiles.pop(0)
@@ -1008,7 +1010,7 @@ class GameEngine:
                 "alive": c["alive"],
                 "center": c["center"],
                 "rect": c["rect"],
-                "cannon_angle": c["cannon_angle"],
+                "cannon_angle": round(c["cannon_angle"], 3),
                 "cannon_cooldown": c["cannon_cooldown"],
                 "shield": dict(c["shield"]),
                 "bricks": [dict(b) for b in c["bricks"]],
@@ -1020,14 +1022,14 @@ class GameEngine:
                 "human": c["owner"] in self.human_players,
             } for c in self.castles],
             "projectiles": [{
-                "x": p["x"], "y": p["y"],
-                "vx": p["vx"], "vy": p["vy"],
+                "x": round(p["x"], 1), "y": round(p["y"], 1),
+                "vx": round(p["vx"], 1), "vy": round(p["vy"], 1),
                 "radius": p["radius"],
                 "owner": p["owner"],
                 "color_idx": p["color_idx"],
                 "alive": p["alive"],
             } for p in self.projectiles],
-            "obstacles": [dict(o) for o in self.obstacles],
+            "obstacles": self._obstacles_snapshot,
             "game_over": self.game_over,
             "winner": self.winner,
             "sound_events": list(self.sound_events),

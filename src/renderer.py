@@ -24,6 +24,63 @@ def draw_game(screen, state, my_slot=None):
     if state.get("game_over"):
         draw_game_over(screen, state)
 
+def draw_game_direct(screen, engine, my_slot=None):
+    """Render directly from engine state without copying — used in local mode."""
+    screen.fill(BG_COLOR)
+    # Draw arena with obstacles read directly
+    ax, ay, aw, ah = ARENA_RECT
+    pygame.draw.rect(screen, ARENA_COLOR, (ax, ay, aw, ah))
+    pygame.draw.rect(screen, ARENA_WALL_COLOR, (ax, ay, aw, ah), 3)
+    cx, cy = ax + aw // 2, ay + ah // 2
+    pygame.draw.line(screen, ARENA_WALL_COLOR, (cx, ay + 1), (cx, ay + ah - 1), 1)
+    pygame.draw.line(screen, ARENA_WALL_COLOR, (ax + 1, cy), (ax + aw - 1, cy), 1)
+    for o in engine.obstacles:
+        pygame.draw.rect(screen, (100, 100, 110), o["rect"])
+        pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
+
+    draw_title(screen)
+    for c in engine.castles:
+        if not c["alive"]:
+            continue
+        # Synthesize human flag inline
+        _c_view = c
+        _c_view_human = c["owner"] in engine.human_players
+        center = c["center"]
+        owner = c["owner"]
+        base_color = CASTLE_COLORS[owner]
+        r = pygame.Rect(center[0] - CASTLE_SIZE // 2, center[1] - CASTLE_SIZE // 2,
+                        CASTLE_SIZE, CASTLE_SIZE)
+        pygame.draw.rect(screen, base_color, r, 2)
+        for brick in c["bricks"]:
+            draw_brick(screen, brick, owner)
+        draw_cannon(screen, center, c["cannon_angle"], owner)
+        draw_shield(screen, center, c["shield"])
+        if _c_view_human:
+            draw_crown(screen, center, owner == my_slot)
+    for c in engine.castles:
+        for blockade in c.get("blockades", []):
+            if not blockade["alive"]:
+                continue
+            draw_blockade(screen, blockade, c["owner"])
+    draw_stats(screen, engine.castles)
+    for p in engine.projectiles:
+        if p["alive"]:
+            draw_projectile(screen, p)
+    if engine.game_over:
+        _draw_game_over_direct(screen, engine)
+
+def _draw_game_over_direct(screen, engine):
+    w = engine.winner
+    font = _get_font(60)
+    color = CASTLE_COLORS[w] if w is not None else (200, 200, 200)
+    text = font.render(f"{WINNER_NAMES[w]} Wins!", True, color)
+    ax, ay, aw, ah = ARENA_RECT
+    rect = text.get_rect(center=(ax + aw // 2, ay + ah // 2))
+    screen.blit(text, rect)
+
+# Pre-computed cracked brick colors (brick at hp=1)
+BRICK_CRACKED_COLORS = [tuple(max(0, c - 60) for c in color) for color in BRICK_COLORS]
+
 def draw_arena(screen, state):
     ax, ay, aw, ah = ARENA_RECT
     pygame.draw.rect(screen, ARENA_COLOR, (ax, ay, aw, ah))
@@ -36,7 +93,7 @@ def draw_arena(screen, state):
         pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
 
 def draw_title(screen):
-    font = pygame.font.SysFont(None, 30, bold=True)
+    font = _get_font(30)
     text = font.render("REBOUND", True, ARENA_WALL_COLOR)
     rect = text.get_rect(center=(WINDOW_WIDTH // 2, 20))
     screen.blit(text, rect)
@@ -64,7 +121,7 @@ def draw_brick(screen, brick, owner):
     if brick["hp"] == 2:
         pygame.draw.rect(screen, BRICK_COLORS[owner], brick["rect"])
     else:
-        color = tuple(max(0, c - 60) for c in BRICK_COLORS[owner])
+        color = BRICK_CRACKED_COLORS[owner]
         pygame.draw.rect(screen, color, brick["rect"])
         cx = rx + rw // 2
         cy = ry + rh // 2
@@ -107,30 +164,45 @@ def draw_cannon(screen, center, angle, owner):
     pygame.draw.polygon(screen, color, points)
     pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
 
+# Pre-rendered shield surfaces (created on first use)
+_shield_outline = None
+_shield_tint = None
+
+def _get_shield_surfaces():
+    global _shield_outline, _shield_tint
+    if _shield_outline is None:
+        _shield_outline = pygame.Surface((SHIELD_RADIUS * 2, SHIELD_RADIUS * 2), pygame.SRCALPHA)
+        pygame.draw.circle(_shield_outline, SHIELD_COLOR, (SHIELD_RADIUS, SHIELD_RADIUS), SHIELD_RADIUS, 3)
+        _shield_tint = pygame.Surface((SHIELD_RADIUS * 2, SHIELD_RADIUS * 2), pygame.SRCALPHA)
+        _shield_tint.set_alpha(40)
+        pygame.draw.circle(_shield_tint, (80, 180, 255), (SHIELD_RADIUS, SHIELD_RADIUS), SHIELD_RADIUS)
+    return _shield_outline, _shield_tint
+
 def draw_shield(screen, center, shield):
     if not shield["active"]:
         return
     cx, cy = center
-    s = pygame.Surface((SHIELD_RADIUS * 2, SHIELD_RADIUS * 2), pygame.SRCALPHA)
-    pygame.draw.circle(s, SHIELD_COLOR, (SHIELD_RADIUS, SHIELD_RADIUS), SHIELD_RADIUS, 3)
-    alpha_tint = pygame.Surface((SHIELD_RADIUS * 2, SHIELD_RADIUS * 2), pygame.SRCALPHA)
-    alpha_tint.set_alpha(40)
-    pygame.draw.circle(alpha_tint, (80, 180, 255), (SHIELD_RADIUS, SHIELD_RADIUS), SHIELD_RADIUS)
-    screen.blit(alpha_tint, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
-    screen.blit(s, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
+    outline, tint = _get_shield_surfaces()
+    screen.blit(tint, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
+    screen.blit(outline, (cx - SHIELD_RADIUS, cy - SHIELD_RADIUS))
+
+# Pre-rendered crown surfaces (defined=True and defined=False variants)
+_crown_cache = {}
 
 def draw_crown(screen, center, defined=True):
     cx, cy = center
     cy -= CASTLE_SIZE // 2 + 6
-    s = pygame.Surface((30, 16), pygame.SRCALPHA)
-    pts = [(4, 14), (0, 8), (7, 4), (10, 10), (15, 0), (20, 10), (23, 4), (30, 8), (26, 14)]
-    if defined:
-        pygame.draw.polygon(s, (255, 215, 0, 200), pts)
-        pygame.draw.polygon(s, (200, 160, 0, 240), pts, 2)
-    else:
-        pygame.draw.polygon(s, (200, 180, 80, 120), pts)
-        pygame.draw.polygon(s, (255, 215, 0, 180), pts, 1)
-    screen.blit(s, (cx - 15, cy))
+    if defined not in _crown_cache:
+        s = pygame.Surface((30, 16), pygame.SRCALPHA)
+        pts = [(4, 14), (0, 8), (7, 4), (10, 10), (15, 0), (20, 10), (23, 4), (30, 8), (26, 14)]
+        if defined:
+            pygame.draw.polygon(s, (255, 215, 0, 200), pts)
+            pygame.draw.polygon(s, (200, 160, 0, 240), pts, 2)
+        else:
+            pygame.draw.polygon(s, (200, 180, 80, 120), pts)
+            pygame.draw.polygon(s, (255, 215, 0, 180), pts, 1)
+        _crown_cache[defined] = s
+    screen.blit(_crown_cache[defined], (cx - 15, cy))
 
 def draw_projectile(screen, p):
     pygame.draw.circle(screen, PROJECTILE_COLORS[p["color_idx"]],
@@ -147,7 +219,7 @@ def _get_font(size):
 
 def draw_stats(screen, castles):
     ax, ay, aw, ah = ARENA_RECT
-    font = pygame.font.SysFont(None, 20)
+    font = _get_font(20)
     for c in castles:
         h = c["stats"]["hits"]
         b = c["stats"]["blocks"]

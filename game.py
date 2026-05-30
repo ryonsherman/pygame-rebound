@@ -11,7 +11,7 @@ import pygame
 from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR, NATS_NAME, LOBBY_COUNTDOWN
 from src.game_client import Game
 from src.menu import Menu
-from src.renderer import draw_game
+from src.renderer import draw_game, _get_font
 from src.sounds import play_sound_events
 
 from src.nats_common import (
@@ -288,33 +288,30 @@ class App:
         if self.state == "menu":
             self.menu.draw(self.screen)
             if self.error_msg:
-                font = pygame.font.SysFont(None, 28)
-                text = font.render(self.error_msg, True, (220, 80, 80))
+                text = _get_font(28).render(self.error_msg, True, (220, 80, 80))
                 rect = text.get_rect(center=(WINDOW_WIDTH // 2, 520))
                 self.screen.blit(text, rect)
 
         elif self.state == "waiting":
             self.screen.fill(BG_COLOR)
-            font = pygame.font.SysFont(None, 40)
-            text = font.render(f"Waiting for players... {self.waiting_players}/4", True, (200, 200, 220))
+            text = _get_font(40).render(f"Waiting for players... {self.waiting_players}/4", True, (200, 200, 220))
             rect = text.get_rect(center=(WINDOW_WIDTH // 2, 300))
             self.screen.blit(text, rect)
 
             remaining = max(0, int(self.waiting_deadline - time.time())) if self.waiting_deadline else LOBBY_COUNTDOWN
             mins, secs = divmod(remaining, 60)
-            timer_font = pygame.font.SysFont(None, 60)
-            timer = timer_font.render(f"{mins}:{secs:02d}", True, (160, 160, 200))
+            timer = _get_font(60).render(f"{mins}:{secs:02d}", True, (160, 160, 200))
             trect = timer.get_rect(center=(WINDOW_WIDTH // 2, 360))
             self.screen.blit(timer, trect)
 
-            hint = pygame.font.SysFont(None, 24).render(
+            hint = _get_font(24).render(
                 "Press Q to cancel.", True, (100, 100, 120)
             )
             hrect = hint.get_rect(center=(WINDOW_WIDTH // 2, 420))
             self.screen.blit(hint, hrect)
 
             if self.muted:
-                muted_text = pygame.font.SysFont(None, 24).render("MUTED", True, (200, 200, 200))
+                muted_text = _get_font(24).render("MUTED", True, (200, 200, 200))
                 self.screen.blit(muted_text, (10, 10))
 
         elif self.state == "remote_game":
@@ -324,13 +321,12 @@ class App:
                 draw_game(self.screen, self.latest_state, my_slot=self.nats.slot)
                 if self.latest_state.get("game_over"):
                     remaining = max(0, 30 - self.game_over_timer // FPS)
-                    font = pygame.font.SysFont(None, 24)
-                    hint = font.render(f"Returning to menu in {remaining}s — Press Q to return now", True, (120, 120, 140))
+                    hint = _get_font(24).render(f"Returning to menu in {remaining}s — Press Q to return now", True, (120, 120, 140))
                     self.screen.blit(hint, (WINDOW_WIDTH // 2 - 160, WINDOW_HEIGHT - 30))
             else:
                 self.screen.fill(BG_COLOR)
             if self.muted:
-                muted_text = pygame.font.SysFont(None, 24).render("MUTED", True, (200, 200, 200))
+                muted_text = _get_font(24).render("MUTED", True, (200, 200, 200))
                 self.screen.blit(muted_text, (10, 10))
 
         elif self.state == "game":

@@ -1,5 +1,6 @@
 import pygame
 from config import WINDOW_WIDTH, WINDOW_HEIGHT, BG_COLOR
+from src.renderer import _get_font
 
 class Menu:
     def __init__(self):
@@ -67,9 +68,9 @@ class Menu:
 
     def draw(self, screen):
         screen.fill(BG_COLOR)
-        title_font = pygame.font.SysFont(None, 80)
-        font = pygame.font.SysFont(None, 44)
-        small = pygame.font.SysFont(None, 28)
+        title_font = _get_font(80)
+        font = _get_font(44)
+        small = _get_font(28)
 
         title = title_font.render("REBOUND", True, (200, 200, 220))
         title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 100))
