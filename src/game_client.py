@@ -9,7 +9,7 @@ _muted_surface = None
 def _get_muted_surface():
     global _muted_surface
     if _muted_surface is None:
-        _muted_surface = _get_font(24).render("MUTED (M)", True, (200, 200, 200))
+        _muted_surface = _get_font(24).render("MUTED", True, (200, 200, 200))
     return _muted_surface
 
 class Game:
@@ -49,7 +49,8 @@ class Game:
             play_sound_events({"sound_events": self.engine.sound_events})
         # Render directly from engine — avoids get_state() copy every frame
         my_slot = None if self.spectate else 0
-        draw_game_direct(screen, self.engine, my_slot=my_slot)
+        aim_mode = "spectate" if self.spectate else "single_player"
+        draw_game_direct(screen, self.engine, my_slot=my_slot, aim_mode=aim_mode)
         if self.muted:
             screen.blit(_get_muted_surface(), (10, 10))
         if self.spectate and self.engine.game_over:

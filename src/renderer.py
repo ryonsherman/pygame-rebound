@@ -8,7 +8,14 @@ from config import (
     BG_COLOR, ARENA_COLOR, ARENA_WALL_COLOR,
 )
 
-def draw_game(screen, state, my_slot=None, difficulty="medium"):
+def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
+    """Render game state.
+    
+    aim_mode controls aim line visibility:
+    - 'spectate': show all players' lines (medium style, no clamp, no fade)
+    - 'multiplayer': show only own line (medium style, clamped, no fade)
+    - 'admin': show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+    """
     screen.fill(BG_COLOR)
     draw_arena(screen, state)
     draw_title(screen)
@@ -23,14 +30,37 @@ def draw_game(screen, state, my_slot=None, difficulty="medium"):
             draw_projectile(screen, p)
     if state.get("game_over"):
         draw_game_over(screen, state)
-    # Draw aim line for human player based on difficulty
-    if my_slot is not None:
+    
+    # Draw aim lines based on mode
+    if aim_mode == "spectate":
+        # Show all lines (medium style, no clamp)
         for c in state["castles"]:
-            if c["owner"] == my_slot and c.get("human"):
-                draw_aim_line(screen, c, difficulty)
+            if c["alive"]:
+                draw_aim_line(screen, c, "medium", clamp_to_quadrant=False)
+    elif aim_mode == "multiplayer":
+        # Show only own line (medium style, clamped)
+        if my_slot is not None:
+            for c in state["castles"]:
+                if c["owner"] == my_slot and c.get("human"):
+                    draw_aim_line(screen, c, "medium", clamp_to_quadrant=True)
+    elif aim_mode == "admin":
+        # Show own line (easy, no clamp) + others (medium, no clamp)
+        if my_slot is not None:
+            for c in state["castles"]:
+                if c["alive"]:
+                    style = "easy" if c["owner"] == my_slot else "medium"
+                    draw_aim_line(screen, c, style, clamp_to_quadrant=False)
 
-def draw_game_direct(screen, engine, my_slot=None):
-    """Render directly from engine state without copying — used in local mode."""
+def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
+    """Render directly from engine state without copying — used in local mode.
+    
+    aim_mode controls aim line visibility:
+    - 'spectate': show all players' lines (medium style, no clamp, no fade)
+    - 'multiplayer': show only own line (medium style, clamped, no fade)
+    - 'admin': show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+    - 'single_player': show only human player line based on engine.difficulty
+                       (easy=no clamp + fade, medium=clamped, hard=none)
+    """
     screen.fill(BG_COLOR)
     # Draw arena with obstacles read directly
     ax, ay, aw, ah = ARENA_RECT
@@ -73,11 +103,35 @@ def draw_game_direct(screen, engine, my_slot=None):
             draw_projectile(screen, p)
     if engine.game_over:
         _draw_game_over_direct(screen, engine)
-    # Draw aim line for human player based on difficulty
-    if my_slot is not None:
+    
+    # Draw aim lines based on mode
+    if aim_mode == "spectate":
+        # Show all lines (medium style, no clamp)
         for c in engine.castles:
-            if c["owner"] == my_slot and c["owner"] in engine.human_players:
-                draw_aim_line(screen, c, engine.difficulty)
+            if c["alive"]:
+                draw_aim_line(screen, c, "medium", clamp_to_quadrant=False)
+    elif aim_mode == "multiplayer":
+        # Show only own line (medium style, clamped)
+        if my_slot is not None:
+            for c in engine.castles:
+                if c["owner"] == my_slot and c["owner"] in engine.human_players:
+                    draw_aim_line(screen, c, "medium", clamp_to_quadrant=True)
+    elif aim_mode == "admin":
+        # Show own line (easy, no clamp) + others (medium, no clamp)
+        if my_slot is not None:
+            for c in engine.castles:
+                if c["alive"]:
+                    style = "easy" if c["owner"] == my_slot else "medium"
+                    draw_aim_line(screen, c, style, clamp_to_quadrant=False)
+    elif aim_mode == "single_player":
+        # Show human player line based on difficulty
+        # easy: no clamp, fade; medium: clamped, no fade; hard: none
+        if my_slot is not None:
+            for c in engine.castles:
+                if c["owner"] == my_slot and c["owner"] in engine.human_players:
+                    clamp = (engine.difficulty == "medium")
+                    fade = (engine.difficulty == "easy")
+                    draw_aim_line(screen, c, engine.difficulty, clamp_to_quadrant=clamp, fade=fade)
 
 def _draw_game_over_direct(screen, engine):
     w = engine.winner
@@ -175,14 +229,14 @@ def draw_cannon(screen, center, angle, owner):
     pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
 
 
-def draw_aim_line(screen, castle, difficulty):
+def draw_aim_line(screen, castle, style, clamp_to_quadrant=False, fade=False):
     """Draw aim line from cannon tip showing aim direction.
     
-    Easy: solid bright line
-    Medium: fainter line (50% alpha)
-    Hard: no line
+    style: 'easy' (solid bright), 'medium' (faint 50% alpha), 'hard' (none)
+    clamp_to_quadrant: if True, line endpoint is clamped to player's quadrant
+    fade: if True, line fades out along its length (used for easy mode)
     """
-    if difficulty == "hard":
+    if style == "hard":
         return
     
     center = castle["center"]
@@ -199,20 +253,56 @@ def draw_aim_line(screen, castle, difficulty):
     ex = sx + math.cos(angle) * line_length
     ey = sy + math.sin(angle) * line_length
     
-    if difficulty == "easy":
+    # Clamp endpoint to player's quadrant if requested
+    if clamp_to_quadrant:
+        ax, ay, aw, ah = ARENA_RECT
+        arena_cx, arena_cy = ax + aw // 2, ay + ah // 2
+        
+        if owner == 0:  # Bottom-right, aims up-left
+            ex = min(ex, arena_cx - 1)
+            ey = min(ey, arena_cy - 1)
+        elif owner == 1:  # Top-left, aims down-right
+            ex = max(ex, arena_cx + 1)
+            ey = max(ey, arena_cy + 1)
+        elif owner == 2:  # Top-right, aims down-left
+            ex = min(ex, arena_cx - 1)
+            ey = max(ey, arena_cy + 1)
+        elif owner == 3:  # Bottom-left, aims up-right
+            ex = max(ex, arena_cx + 1)
+            ey = min(ey, arena_cy - 1)
+    
+    if style == "easy":
         # Full brightness, solid line
         color = (255, 255, 100)  # Bright yellow
-        alpha = 255
+        base_alpha = 255
     else:  # medium
         # Fainter, semi-transparent
         color = (200, 200, 80)
-        alpha = 128
+        base_alpha = 128
     
-    # Create surface with alpha for transparency
-    line_surface = pygame.Surface((int(abs(ex - sx)) + 4, int(abs(ey - sy)) + 4), pygame.SRCALPHA)
-    pygame.draw.line(line_surface, (*color, alpha), (2, 2), 
-                     (2 + int(ex - sx), 2 + int(ey - sy)), 2)
-    screen.blit(line_surface, (int(sx) - 2, int(sy) - 2))
+    if fade:
+        # Draw multiple segments with decreasing alpha
+        num_segments = 12
+        dx = (ex - sx) / num_segments
+        dy = (ey - sy) / num_segments
+        for i in range(num_segments):
+            segment_alpha = int(base_alpha * (1.0 - i / num_segments))
+            if segment_alpha < 10:
+                break
+            x1 = sx + i * dx
+            y1 = sy + i * dy
+            x2 = sx + (i + 1) * dx
+            y2 = sy + (i + 1) * dy
+            line_surface = pygame.Surface((int(abs(x2 - x1)) + 4, int(abs(y2 - y1)) + 4), pygame.SRCALPHA)
+            pygame.draw.line(line_surface, (*color, segment_alpha), (2, 2),
+                             (2 + int(x2 - x1), 2 + int(y2 - y1)), 2)
+            screen.blit(line_surface, (int(x1) - 2, int(y1) - 2))
+    else:
+        # Create surface with alpha for transparency
+        line_surface = pygame.Surface((int(abs(ex - sx)) + 4, int(abs(ey - sy)) + 4), pygame.SRCALPHA)
+        pygame.draw.line(line_surface, (*color, base_alpha), (2, 2), 
+                         (2 + int(ex - sx), 2 + int(ey - sy)), 2)
+        screen.blit(line_surface, (int(sx) - 2, int(sy) - 2))
 
 # Pre-rendered shield surfaces (created on first use)
 _shield_outline = None
