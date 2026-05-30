@@ -75,8 +75,8 @@ class Menu:
         self.bg_engine.update()
 
     def draw(self, screen):
-        # Draw background game (no aim lines)
-        draw_game_direct(screen, self.bg_engine, my_slot=None, aim_mode="spectate_no_lines")
+        # Draw background game (no aim lines, no HUD)
+        draw_game_direct(screen, self.bg_engine, my_slot=None, aim_mode="spectate_no_lines", show_hud=False)
         
         # Draw dark translucent overlay to make menu stand out
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)

@@ -70,7 +70,7 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
     if state.get("game_over"):
         draw_game_over(screen, state)
 
-def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
+def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer", show_hud=True):
     """Render directly from engine state without copying — used in local mode.
     
     aim_mode controls aim line visibility:
@@ -79,6 +79,7 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
     - 'admin': show own line (easy) + others (medium, no clamp)
     - 'single_player': show only human player line based on engine.difficulty
                        (easy=no clamp, medium=clamped, hard=none)
+    show_hud: if False, skip title and hit/block stats (for menu background)
     """
     screen.fill(BG_COLOR)
     # Draw arena with obstacles read directly
@@ -92,7 +93,8 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
         pygame.draw.rect(screen, (100, 100, 110), o["rect"])
         pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
 
-    draw_title(screen)
+    if show_hud:
+        draw_title(screen)
     for c in engine.castles:
         if not c["alive"]:
             continue
@@ -116,7 +118,8 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
             if not blockade["alive"]:
                 continue
             draw_blockade(screen, blockade, c["owner"])
-    draw_stats(screen, engine.castles)
+    if show_hud:
+        draw_stats(screen, engine.castles)
     
     # Collect all blockades as obstacles for ray casting
     all_blockades = []
