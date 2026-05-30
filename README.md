@@ -8,10 +8,6 @@ A fast-paced 4-player castle battle game built with Pygame and networked multipl
 
 ## Screenshots
 
-![Game Screenshot](screenshots/game.png)
-
-## Screenshots
-
 ![Menu](screenshots/menu.png)
 *Main menu with difficulty selection*
 
