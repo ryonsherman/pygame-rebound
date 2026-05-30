@@ -246,12 +246,12 @@ class GameServer:
 
     def _check_auth(self, msg):
         """Validate admin auth. Returns decoded data if authorized, None otherwise."""
+        if not self.password:
+            return None  # No password = admin commands disabled
         try:
             data = decode_msg(msg.data)
         except Exception:
             return None
-        if not self.password:
-            return data
         if verify_auth(data, self.password):
             return data
         return None
@@ -335,7 +335,7 @@ async def _run():
     if password:
         print("[SERVER] Admin auth enabled (HMAC-SHA256)")
     else:
-        print("[SERVER] WARNING: No admin password — admin commands are unauthenticated")
+        print("[SERVER] Admin commands disabled (no password)")
     try:
         await server.start()
     except asyncio.CancelledError:
