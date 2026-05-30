@@ -135,15 +135,15 @@ def _init_obstacles():
     m = 3
     obs = []
 
-    for i in range(4):
+    # Edge barriers - extended by 1 brick on each end
+    for i in range(5):
         obs.append({"rect": (cx - bs // 2, ay + m + i * bs, bs, bs), "zone": "edge"})
         obs.append({"rect": (cx - bs // 2, ay + ah - m - (i + 1) * bs, bs, bs), "zone": "edge"})
         obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
-    # X shape (diagonal cross) instead of + shape
-    # This prevents 90° bounces into adjacent castles
-    for i in range(-2, 3):
+    # X shape (diagonal cross) - extended by 1 brick on each end
+    for i in range(-3, 4):
         obs.append({"rect": (cx + i * bs - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
         obs.append({"rect": (cx + i * bs - bs // 2, cy - i * bs - bs // 2, bs, bs), "zone": "center"})
 
