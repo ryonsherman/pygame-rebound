@@ -32,24 +32,35 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
         draw_game_over(screen, state)
     
     # Draw aim lines based on mode
+    obstacles = state.get("obstacles", [])
+    # Collect all blockades as obstacles for ray casting
+    all_blockades = []
+    for c in state["castles"]:
+        for blockade in c.get("blockades", []):
+            if blockade.get("alive"):
+                for brick in blockade.get("bricks", []):
+                    if brick.get("alive"):
+                        all_blockades.append({"rect": brick["rect"]})
+    hit_objects = obstacles + all_blockades
+    
     if aim_mode == "spectate":
-        # Show all lines (medium style, no clamp)
+        # Show all lines (medium style, no clamp, no fade)
         for c in state["castles"]:
             if c["alive"]:
-                draw_aim_line(screen, c, "medium", clamp_to_quadrant=False)
+                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False, fade=False)
     elif aim_mode == "multiplayer":
-        # Show only own line (medium style, clamped)
+        # Show only own line (medium style, clamped, no fade)
         if my_slot is not None:
             for c in state["castles"]:
                 if c["owner"] == my_slot and c.get("human"):
-                    draw_aim_line(screen, c, "medium", clamp_to_quadrant=True)
+                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True, fade=False)
     elif aim_mode == "admin":
-        # Show own line (easy, no clamp) + others (medium, no clamp)
+        # Show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
         if my_slot is not None:
             for c in state["castles"]:
                 if c["alive"]:
                     style = "easy" if c["owner"] == my_slot else "medium"
-                    draw_aim_line(screen, c, style, clamp_to_quadrant=False)
+                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False, fade=False)
 
 def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
     """Render directly from engine state without copying — used in local mode.
@@ -105,24 +116,35 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
         _draw_game_over_direct(screen, engine)
     
     # Draw aim lines based on mode
+    obstacles = engine.obstacles
+    # Collect all blockades as obstacles for ray casting
+    all_blockades = []
+    for c in engine.castles:
+        for blockade in c.get("blockades", []):
+            if blockade.get("alive"):
+                for brick in blockade.get("bricks", []):
+                    if brick.get("alive"):
+                        all_blockades.append({"rect": brick["rect"]})
+    hit_objects = obstacles + all_blockades
+    
     if aim_mode == "spectate":
-        # Show all lines (medium style, no clamp)
+        # Show all lines (medium style, no clamp, no fade)
         for c in engine.castles:
             if c["alive"]:
-                draw_aim_line(screen, c, "medium", clamp_to_quadrant=False)
+                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False, fade=False)
     elif aim_mode == "multiplayer":
-        # Show only own line (medium style, clamped)
+        # Show only own line (medium style, clamped, no fade)
         if my_slot is not None:
             for c in engine.castles:
                 if c["owner"] == my_slot and c["owner"] in engine.human_players:
-                    draw_aim_line(screen, c, "medium", clamp_to_quadrant=True)
+                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True, fade=False)
     elif aim_mode == "admin":
-        # Show own line (easy, no clamp) + others (medium, no clamp)
+        # Show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
         if my_slot is not None:
             for c in engine.castles:
                 if c["alive"]:
                     style = "easy" if c["owner"] == my_slot else "medium"
-                    draw_aim_line(screen, c, style, clamp_to_quadrant=False)
+                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False, fade=False)
     elif aim_mode == "single_player":
         # Show human player line based on difficulty
         # easy: no clamp, fade; medium: clamped, no fade; hard: none
@@ -131,7 +153,7 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
                 if c["owner"] == my_slot and c["owner"] in engine.human_players:
                     clamp = (engine.difficulty == "medium")
                     fade = (engine.difficulty == "easy")
-                    draw_aim_line(screen, c, engine.difficulty, clamp_to_quadrant=clamp, fade=fade)
+                    draw_aim_line(screen, c, engine.difficulty, hit_objects, clamp_to_quadrant=clamp, fade=fade)
 
 def _draw_game_over_direct(screen, engine):
     w = engine.winner
@@ -229,47 +251,190 @@ def draw_cannon(screen, center, angle, owner):
     pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
 
 
-def draw_aim_line(screen, castle, style, clamp_to_quadrant=False, fade=False):
-    """Draw aim line from cannon tip showing aim direction.
+def _ray_cast_to_boundary(cx, cy, angle, obstacles, clamp_to_quadrant):
+    """Cast a ray from cannon and return the hit point.
+    
+    Checks collision with arena walls and obstacles (barricades).
+    Returns (ex, ey) - the endpoint where the ray hits.
+    """
+    ax, ay, aw, ah = ARENA_RECT
+    arena_cx, arena_cy = ax + aw // 2, ay + ah // 2
+    
+    # Define quadrant boundaries based on owner
+    if clamp_to_quadrant:
+        # Determine which quadrant based on starting position
+        if cx > arena_cx and cy > arena_cy:
+            owner_zone = 0  # Bottom-right
+            max_x, max_y = arena_cx - 1, arena_cy - 1
+        elif cx < arena_cx and cy < arena_cy:
+            owner_zone = 1  # Top-left
+            min_x, min_y = arena_cx + 1, arena_cy + 1
+        elif cx > arena_cx and cy < arena_cy:
+            owner_zone = 2  # Top-right
+            max_x, min_y = arena_cx - 1, arena_cy + 1
+        else:
+            owner_zone = 3  # Bottom-left
+            min_x, max_y = arena_cx + 1, arena_cy - 1
+    else:
+        # Can go anywhere, hit arena walls
+        max_x = ax + aw
+        max_y = ay + ah
+        min_x = ax
+        min_y = ay
+    
+    # Ray direction
+    dx = math.cos(angle)
+    dy = math.sin(angle)
+    
+    # Find intersection with all 4 arena walls
+    t_values = []
+    
+    # Left wall (x = ax)
+    if dx != 0:
+        t = (ax - cx) / dx
+        if t > 0:
+            y = cy + t * dy
+            if ay <= y <= ay + ah:
+                t_values.append(t)
+    
+    # Right wall (x = ax + aw)
+    if dx != 0:
+        t = (ax + aw - cx) / dx
+        if t > 0:
+            y = cy + t * dy
+            if ay <= y <= ay + ah:
+                t_values.append(t)
+    
+    # Top wall (y = ay)
+    if dy != 0:
+        t = (ay - cy) / dy
+        if t > 0:
+            x = cx + t * dx
+            if ax <= x <= ax + aw:
+                t_values.append(t)
+    
+    # Bottom wall (y = ay + ah)
+    if dy != 0:
+        t = (ay + ah - cy) / dy
+        if t > 0:
+            x = cx + t * dx
+            if ax <= x <= ax + aw:
+                t_values.append(t)
+    
+    # Check quadrant boundary if clamped
+    if clamp_to_quadrant:
+        if owner_zone == 0:  # Bottom-right, clamp to up-left
+            if dx < 0:
+                t = (arena_cx - 1 - cx) / dx
+                if t > 0 and t < min(t_values) if t_values else True:
+                    y = cy + t * dy
+                    if ay <= y <= arena_cy - 1:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+            if dy < 0:
+                t = (arena_cy - 1 - cy) / dy
+                if t > 0 and t < min(t_values) if t_values else True:
+                    x = cx + t * dx
+                    if ax <= x <= arena_cx - 1:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+        elif owner_zone == 1:  # Top-left, clamp to down-right
+            if dx > 0:
+                t = (arena_cx + 1 - cx) / dx
+                if t > 0 and t < min(t_values) if t_values else True:
+                    y = cy + t * dy
+                    if arena_cy + 1 <= y <= ay + ah:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+            if dy > 0:
+                t = (arena_cy + 1 - cy) / dy
+                if t > 0 and t < min(t_values) if t_values else True:
+                    x = cx + t * dx
+                    if arena_cx + 1 <= x <= ax + aw:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+        elif owner_zone == 2:  # Top-right, clamp to down-left
+            if dx < 0:
+                t = (arena_cx - 1 - cx) / dx
+                if t > 0 and t < min(t_values) if t_values else True:
+                    y = cy + t * dy
+                    if arena_cy + 1 <= y <= ay + ah:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+            if dy > 0:
+                t = (arena_cy + 1 - cy) / dy
+                if t > 0 and t < min(t_values) if t_values else True:
+                    x = cx + t * dx
+                    if ax <= x <= arena_cx - 1:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+        else:  # owner_zone == 3, Bottom-left, clamp to up-right
+            if dx > 0:
+                t = (arena_cx + 1 - cx) / dx
+                if t > 0 and t < min(t_values) if t_values else True:
+                    y = cy + t * dy
+                    if ay <= y <= arena_cy - 1:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+            if dy < 0:
+                t = (arena_cy - 1 - cy) / dy
+                if t > 0 and t < min(t_values) if t_values else True:
+                    x = cx + t * dx
+                    if arena_cx + 1 <= x <= ax + aw:
+                        t_values = [t] + [tv for tv in t_values if tv >= t]
+    
+    # Check collision with obstacles (barricades)
+    for obs in obstacles:
+        rx, ry, rw, rh = obs["rect"]
+        # Ray vs AABB intersection
+        t_min = 0
+        t_max = float('inf')
+        
+        if dx != 0:
+            t1 = (rx - cx) / dx
+            t2 = (rx + rw - cx) / dx
+            t_min = max(t_min, min(t1, t2))
+            t_max = min(t_max, max(t1, t2))
+        else:
+            if cx < rx or cx > rx + rw:
+                continue
+        
+        if dy != 0:
+            t1 = (ry - cy) / dy
+            t2 = (ry + rh - cy) / dy
+            t_min = max(t_min, min(t1, t2))
+            t_max = min(t_max, max(t1, t2))
+        else:
+            if cy < ry or cy > ry + rh:
+                continue
+        
+        if t_min <= t_max and t_max > 0:
+            t_hit = max(0, t_min)
+            if t_hit > 0 and (not t_values or t_hit < min(t_values)):
+                t_values.append(t_hit)
+    
+    if t_values:
+        t = min(t_values)  # Closest intersection
+        return cx + t * dx, cy + t * dy
+    
+    # Fallback: return a point far away
+    return cx + dx * 1000, cy + dy * 1000
+
+
+def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fade=False):
+    """Draw aim line from cannon tip showing where projectile will hit.
     
     style: 'easy' (solid bright), 'medium' (faint 50% alpha), 'hard' (none)
-    clamp_to_quadrant: if True, line endpoint is clamped to player's quadrant
-    fade: if True, line fades out along its length (used for easy mode)
+    obstacles: list of obstacle rects to check for collisions
+    clamp_to_quadrant: if True, line stops at quadrant boundary
+    fade: if True, line fades out along its length (used for easy mode unclamped)
     """
     if style == "hard":
         return
     
     center = castle["center"]
     angle = castle["cannon_angle"]
-    owner = castle["owner"]
     
     # Start from cannon tip (same calculation as draw_cannon)
     start_dist = CASTLE_SIZE // 2 + 6 + CANNON_LENGTH
     sx = center[0] + math.cos(angle) * start_dist
     sy = center[1] + math.sin(angle) * start_dist
     
-    # Line extends 120 pixels from cannon tip
-    line_length = 120
-    ex = sx + math.cos(angle) * line_length
-    ey = sy + math.sin(angle) * line_length
-    
-    # Clamp endpoint to player's quadrant if requested
-    if clamp_to_quadrant:
-        ax, ay, aw, ah = ARENA_RECT
-        arena_cx, arena_cy = ax + aw // 2, ay + ah // 2
-        
-        if owner == 0:  # Bottom-right, aims up-left
-            ex = min(ex, arena_cx - 1)
-            ey = min(ey, arena_cy - 1)
-        elif owner == 1:  # Top-left, aims down-right
-            ex = max(ex, arena_cx + 1)
-            ey = max(ey, arena_cy + 1)
-        elif owner == 2:  # Top-right, aims down-left
-            ex = min(ex, arena_cx - 1)
-            ey = max(ey, arena_cy + 1)
-        elif owner == 3:  # Bottom-left, aims up-right
-            ex = max(ex, arena_cx + 1)
-            ey = min(ey, arena_cy - 1)
+    # Cast ray to find actual hit point
+    ex, ey = _ray_cast_to_boundary(sx, sy, angle, obstacles, clamp_to_quadrant)
     
     if style == "easy":
         # Full brightness, solid line
@@ -283,16 +448,16 @@ def draw_aim_line(screen, castle, style, clamp_to_quadrant=False, fade=False):
     if fade:
         # Draw multiple segments with decreasing alpha
         num_segments = 12
-        dx = (ex - sx) / num_segments
-        dy = (ey - sy) / num_segments
+        seg_dx = (ex - sx) / num_segments
+        seg_dy = (ey - sy) / num_segments
         for i in range(num_segments):
             segment_alpha = int(base_alpha * (1.0 - i / num_segments))
             if segment_alpha < 10:
                 break
-            x1 = sx + i * dx
-            y1 = sy + i * dy
-            x2 = sx + (i + 1) * dx
-            y2 = sy + (i + 1) * dy
+            x1 = sx + i * seg_dx
+            y1 = sy + i * seg_dy
+            x2 = sx + (i + 1) * seg_dx
+            y2 = sy + (i + 1) * seg_dy
             line_surface = pygame.Surface((int(abs(x2 - x1)) + 4, int(abs(y2 - y1)) + 4), pygame.SRCALPHA)
             pygame.draw.line(line_surface, (*color, segment_alpha), (2, 2),
                              (2 + int(x2 - x1), 2 + int(y2 - y1)), 2)
