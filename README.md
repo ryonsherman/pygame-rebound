@@ -1,227 +1,173 @@
-# REBOUND
+# 🏰 Rebound
 
-A 4-player artillery battle game built with Python and Pygame. Players control castles in the four corners of an arena and fire bouncing projectiles at each other. Each castle has 9 bricks (2 HP each), a cannon, and a shield. Last castle standing wins.
+A fast-paced 4-player castle battle game built with Pygame and networked multiplayer via NATS.
 
-## Quick Start
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Pygame](https://img.shields.io/badge/Pygame-2.x-green)
+![NATS](https://img.shields.io/badge/NATS-Multiplayer-purple)
+
+## Overview
+
+Each player owns a castle in one corner of the arena. Castles have a rotating cannon that fires bouncing projectiles. When a projectile hits a castle's bricks, those bricks are destroyed. **Last castle standing wins.**
+
+Projectiles ricochet off walls, obstacles, and each other — creating chaotic chain reactions as the arena fills with bouncing shots. Defensive shields can deflect incoming fire and create blockades to protect your castle.
+
+## Features
+
+- **Local Single-Player** — Battle 3 AI opponents with selectable difficulty (Easy, Medium, Hard)
+- **Online Multiplayer** — 4-player matches via NATS with automatic matchmaking
+- **AI Bots** — Intelligent AI that aims, fires, and uses shields strategically
+- **Admin Tools** — Interactive shell to manage games, spawn bots, spectate, and join mid-match
+- **Physics Engine** — Sub-stepped collision detection with elastic ball-ball bouncing
+- **Spectator Mode** — Watch AI-vs-AI battles locally
+
+## Gameplay
+
+- 🔴 Red, 🔵 Blue, 🟢 Green, 🟡 Yellow — each player occupies a corner
+- Cannons auto-rotate; click to fire a projectile
+- Hold **Space** to raise a shield that deflects incoming shots
+- Destroy all bricks of an opponent's castle to eliminate them
+- Projectiles shrink and slow down with each bounce, then expire
+- Random obstacles spawn mid-match to change trajectories
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10+
+- [NATS Server](https://nats.io/download/) (for multiplayer only)
+
+### Setup
 
 ```bash
-pip install pygame
+# Clone the repository
+git clone https://github.com/ryonsherman/pygame-rebound.git
+cd pygame-rebound
+
+# Install dependencies
+pip install pygame nats-py prompt-toolkit
+```
+
+## Running
+
+### Local Play
+
+```bash
+make game           # Start the game client (local single-player via menu)
+make spectate       # Watch an AI-vs-AI match locally
+```
+
+### Online Multiplayer
+
+```bash
+# Terminal 1: Start NATS message broker
+make nats
+
+# Terminal 2: Start the game server (optional password)
+make server
+make server mypassword
+
+# Terminal 3+: Start game clients (select "Online" from menu)
 make game
 ```
 
-Or run directly:
+### Admin Shell
 
 ```bash
-python game.py        # Play the game
-python server.py      # Host multiplayer backend
+make admin                 # Connect without password
+make admin mypassword      # Connect with server password
 ```
 
-Select difficulty on the menu screen, then press Enter or click START.
+**Admin commands:**
+
+| Command | Description |
+|---------|-------------|
+| `games` | List active game rooms |
+| `bots [difficulty]` | Spawn 4 bots into a new match |
+| `spectate [game_id]` | Open spectator window for a game |
+| `join [game_id]` | Join a game (kicks highest slot) |
+| `kick <game_id> <slot>` | Kick a player from a slot |
+| `stop` | Shut down the server |
 
 ## Controls
 
-| Key | Action |
-|-----|--------|
-| Mouse move | Aim cannon |
-| Left click | Fire |
-| Space (hold) | Raise shield |
-| M | Toggle mute |
-| Q | Return to menu |
-| Left/Right arrows | Select difficulty (menu) |
-| Down arrow | Select Online (menu) |
-| Up arrow | Back to difficulty (menu) |
-| Enter | Start game (menu) |
+| Input | Action |
+|-------|--------|
+| **Mouse movement** | Aim cannon direction |
+| **Left click** | Fire projectile |
+| **Space (hold)** | Activate shield |
+| **Escape** | Quit to menu |
 
-## Game Rules
+## How Multiplayer Works
 
-### Arena
-- 1024×768 window with a 904×648 arena centered at (60, 60)
-- Quadrant dividing lines mark each player's territory
-- Indestructible grey obstacles: a center `+` cross (9 bricks) and 4-brick barriers at quadrant-line/wall intersections (16 bricks)
+Rebound uses a **server-authoritative** architecture:
 
-### Castles
-- 4 castles, one per corner: Red (bottom-right), Blue (top-left), Green (top-right), Yellow (bottom-left)
-- Each castle has a 3×3 grid of bricks (9 total), each brick has 2 HP
-- First hit cracks the brick (darkens + shows `+`), second hit destroys it
-- Castle is destroyed when all bricks are destroyed
-- Cannon aim is clamped to the outward-facing quadrant (cannot aim behind the castle)
+1. The **server** runs the physics engine and is the sole source of truth
+2. **Clients** only send inputs (mouse position, clicks, space)
+3. The server broadcasts game state at 20Hz to all connected clients
+4. Matchmaking fills rooms of 4 players; unfilled slots get AI after a 30-second countdown
+5. All communication is via [NATS](https://nats.io) pub/sub with base64-encoded JSON payloads
 
-### Projectiles
-- Fired from the cannon muzzle at speed scaled by difficulty
-- Ball inherits tangential momentum from cannon rotation at the moment of firing (sling effect)
-- Max projectiles on screen varies by difficulty (oldest removed when exceeded)
-- Bounce off walls (max bounces varies by difficulty, shrinking each time)
-- Bounce off other projectiles (elastic collision, no shrink or bounce count)
-- Destroyed on hitting a castle brick
-- Bounce off grey obstacles (proper reflection off surface normals)
-
-### Physics
-- Sub-stepped movement: ball advances in increments no larger than its radius per sub-step, preventing tunneling through obstacles
-- Obstacle collision uses true circle-vs-rectangle detection with normal-based reflection
-- Wall clamping after every sub-step ensures balls never escape the arena
-
-### Shield
-- Circular shield centered on the castle (radius 50px)
-- Reflects incoming projectiles randomly (±60° from reverse direction)
-- Goes on cooldown (180 frames) only when hit
-- Reflecting an enemy projectile spawns a 2×2 blockade in the defender's quadrant (max 4 per castle)
-- Reflecting your own projectile does not spawn a blockade or count as a block
-- Shield-reflected balls keep the original shooter's owner
-
-### Blockades
-- 2×2 brick blocks placed randomly in the defender's quadrant
-- Each brick has 1 HP (destroyed on first hit)
-- Bricks must be at least CASTLE_SIZE (60px) from the castle and 1 brick-width apart
-- Persist after their castle is destroyed — still block projectiles and render
-- Projectile bounces off on hit (wall-style physics: shrink, slow, bounce count)
-
-### Scoring
-- H (Hits) and B (Blocks) counters displayed above/below each castle
-- Hits: every time a projectile damages a castle brick
-- Blocks: every time a projectile is reflected by an active shield
-
-## Difficulty Scaling
+## Difficulty Levels
 
 | Parameter | Easy | Medium | Hard |
 |-----------|------|--------|------|
-| Ball speed | ×0.9 | ×1.0 | ×1.1 |
+| Fire rate | Slow | Moderate | Fast |
 | Max bounces | 3 | 4 | 5 |
-| Max balls in play | 15 | 18 | 21 |
-| Ball shrink per bounce | ×0.75 | ×0.80 | ×0.85 |
-| Ball slowdown per bounce | ×0.84 | ×0.88 | ×0.92 |
-| AI fire rate (frames) | 99–198 | 60–150 | 27–81 |
-| AI aim spread | 60° | 35° | 15° |
-| AI bounce chance | 10% | 25% | 40% |
-| AI obstacle awareness | 0.3 | 0.8 | 1.0 |
-| AI rotation speed | 0.02 rad/f | 0.04 rad/f | 0.06 rad/f |
-| AI sling threshold | 0.05 rad | 0.12 rad | 0.20 rad |
-| AI shield detection | 100px | 140px | 180px |
-| AI prediction frames | 30 | 45 | 60 |
+| Max projectiles | 15 | 18 | 21 |
+| Bounce decay | High | Medium | Low |
+| Match duration | ~5 min | ~3.5 min | ~1.5 min |
+
+## Configuration
+
+All constants are defined in [`config.py`](config.py):
+
+| Category | Key Settings |
+|----------|-------------|
+| **Window** | 1024×768 at 60 FPS |
+| **Arena** | 904×648 centered with 60px padding |
+| **Castles** | 3×3 grid of 14px bricks |
+| **Projectiles** | 6px radius, speed 8 px/frame |
+| **Shield** | 50px radius, 3-second cooldown |
+| **Network** | `nats://127.0.0.1:4222`, 20Hz state broadcast |
+| **Lobby** | 30-second countdown before match starts |
+
+## Debug Mode
+
+```bash
+REBOUND_DEBUG=1 make game
+REBOUND_DEBUG=1 make server
+```
+
+Enables verbose logging of fire events, collisions, and eliminations. AI-controlled slots display with an `:AI` suffix in the HUD (e.g., `G:AI`).
 
 ## Project Structure
 
 ```
 rebound-game/
-├── game.py              # Entry point — play the game
-├── server.py            # Multiplayer server entry point
-├── config.py            # All gameplay constants
-├── Makefile             # make game / make server / make nats
-├── TESTS.md             # Full test plan
-├── sounds/              # .ogg sound files + pitch-shifted variants
+├── game.py              # Client entrypoint (window, menu, input, rendering)
+├── server.py            # Multiplayer server (authoritative state, NATS pub/sub)
+├── admin.py             # Admin shell (interactive CLI for game management)
+├── config.py            # All constants (gameplay, network, colors, dimensions)
+├── Makefile             # Build/run targets
+├── CONTEXT.md           # Detailed architecture documentation
+│
 ├── src/
-│   ├── __init__.py
-│   ├── engine.py        # Pure game logic — no Pygame, dict-based state
-│   ├── game_client.py   # Thin client bridging input/rendering to engine
-│   ├── menu.py          # Difficulty/mode selection screen
-│   ├── renderer.py      # All Pygame drawing from state dict
-│   ├── sounds.py        # Sound loader/player — event-driven playback
-│   └── nats_common.py   # NATS messaging helpers for multiplayer
+│   ├── engine.py        # Core game logic: GameEngine + AIController
+│   ├── game_client.py   # Local-mode bridge (input → engine → renderer)
+│   ├── bot_client.py    # NATS bot client (AI input → server)
+│   ├── nats_common.py   # NATS helpers (encode/decode, subjects, auth)
+│   ├── renderer.py      # All Pygame drawing (castles, projectiles, HUD)
+│   ├── menu.py          # Main menu (difficulty, online option)
+│   └── sounds.py        # Sound effect loader
+│
 └── tests/
-    ├── test_wall_escape.py       # Physics tunneling/overlap tests
-    ├── test_obstacles.py         # Obstacle collision analysis
-    ├── test_nats.py              # Multiplayer messaging tests
-    └── test_difficulty_pacing.py # Headless match duration comparison
+    ├── test_wall_escape.py
+    ├── test_obstacles.py
+    ├── test_nats.py
+    └── test_difficulty_pacing.py
 ```
-
-## Architecture
-
-### Engine Design
-
-`src/engine.py` contains all game logic with zero Pygame dependencies:
-- `GameEngine` — manages the game state update loop
-- `AIController` — AI decision-making (per-player)
-- Pure dict-based state for trivial JSON serialization (designed for network play)
-
-The engine processes input via `handle_input({player_idx: {...}})` and advances one frame per `update()` call. State is read via `get_state()`, which returns a trivially serializable dict.
-
-### Multiplayer (NATS)
-
-The multiplayer server (`server.py`) communicates via [NATS](https://nats.io/) pub/sub messaging. Game state is serialized as base64-encoded JSON — this obscures payloads from casual inspection on shared NATS servers without the overhead of encryption.
-
-- Server ticks at 60Hz, broadcasts state at 20Hz, status at 2Hz during lobby
-- 120-second lobby countdown before game auto-starts (waiting for players to join)
-- Players are placed into rooms (up to 4 per room); empty slots are filled by AI
-- Once a match starts, no new players can join
-- Disconnected players' slots revert to AI control
-
-Commands:
-- `make nats` — Start a local NATS server (localhost only, verbose logging)
-- `make server` — Start the game server (connects to NATS)
-- `NATS_URL` in `config.py` controls the NATS connection address
-
-#### Server Authority
-
-The server is the sole host of truth. Clients are input-only interfaces — they send aim coordinates, fire, and shield inputs. All game logic (physics, collision, damage, cooldowns, win conditions) runs server-side. Clients cannot:
-
-- Move projectiles, teleport, or modify positions
-- Deal extra damage or skip cooldowns
-- Modify castle health or kill other players directly
-
-The only input a client controls is where to aim and when to fire/shield. Even then, cannon rotation speed is enforced server-side, preventing snap-aiming.
-
-### Rendering
-
-`src/renderer.py` takes the engine's state dict and draws the current frame using `pygame.draw` primitives. Cannons have a flat tip (muzzle) and a rounded grey base.
-
-### Sound System
-
-`src/sounds.py` lazy-initializes `pygame.mixer` on first play. Each sound event has an original `.ogg` file plus `_h.ogg` (+15% pitch) and `_l.ogg` (-15% pitch) variants. One is picked randomly per event. Volume scales with projectile radius (linear 0.2–1.0), with a 1.3× boost for human players.
-
-## AI
-
-Each AI opponent operates independently with its own target selection, aim planning, and shield logic:
-
-- **Targeting**: Picks a random alive enemy, retargets every 15–45 frames (randomized) and on each shot
-- **Aiming**: Always uses bounce shots (never direct) — plans bounces off walls, center-cross obstacles, or player blockade bricks
-- **Rotation**: Smoothly rotates toward the aim angle at a rate determined by difficulty
-- **Sling shots**: AI fires while still rotating toward target (within a threshold), adding tangential momentum to the ball for curved trajectories
-- **Shield**: Predictively raises shield based on incoming projectile trajectory and proximity; holds for at least 10 frames to prevent flickering
-
-## Development
-
-### Headless Testing
-
-The engine can run without rendering for automated testing:
-
-```python
-from src.engine import GameEngine
-e = GameEngine(difficulty="medium", human_players=[])
-while not e.game_over:
-    e.update()
-print(f"Winner: P{e.winner}")
-```
-
-### Running Tests
-
-```bash
-python tests/test_wall_escape.py        # Physics tunneling tests
-python tests/test_obstacles.py          # Obstacle collision tests
-python tests/test_nats.py               # Multiplayer messaging (requires NATS running)
-python tests/test_difficulty_pacing.py  # Match duration comparison (slow, ~10 trials)
-```
-
-### Debug Mode
-
-Set `REBOUND_DEBUG=1` environment variable to enable structured tracing in stdout. Output includes `[WALL]`, `[OBS]`, `[BLK]`, `[FIRE]`, `[DEATH]` lines with player tags (`R` for human, `G:AI` for bots).
-
-```bash
-REBOUND_DEBUG=1 make game
-```
-
-### Adding Features
-
-- Game logic changes go in `src/engine.py`
-- Visual changes go in `src/renderer.py`
-- New constants go in `config.py`
-- New sound events: add to `src/sounds.py` and call `_emit_sound()` in the engine
-
-## Requirements
-
-- Python 3.10+
-- Pygame 2.6+
-- [nats-py](https://github.com/nats-io/nats.py) (for multiplayer)
-- [nats-server](https://nats.io/) (for hosting, `brew install nats-server`)
 
 ## License
 
-MIT. Sound effects are CC0 from [Kenney](https://kenney.nl/).
+MIT License — see [LICENSE](LICENSE) for details.
