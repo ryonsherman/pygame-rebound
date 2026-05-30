@@ -1,4 +1,4 @@
-.PHONY: game server nats spectate admin tests tests-nats
+.PHONY: game server nats spectate admin tests tests-nats venv
 
 game:
 	python game.py
@@ -20,6 +20,10 @@ tests:
 
 tests-nats:
 	pytest tests/test_nats_integration.py -v
+
+venv:
+	python -m venv .venv
+	.venv/bin/pip install -r requirements.txt
 
 %:
 	@:
