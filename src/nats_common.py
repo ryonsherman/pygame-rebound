@@ -1,6 +1,7 @@
 import json, base64
+from config import NATS_URL
 
-NATS_SERVER = "nats://demo.nats.io:4222"
+NATS_SERVER = NATS_URL
 CONNECT_TIMEOUT = 5
 REQUEST_TIMEOUT = 10
 

@@ -31,7 +31,8 @@ def test_matchmaking():
     import nats
 
     async def client():
-        nc = await nats.connect("nats://demo.nats.io:4222")
+        from config import NATS_URL
+        nc = await nats.connect(NATS_URL)
         msg = await nc.request(
             SUBJECT_MATCH,
             json.dumps({"difficulty": "medium"}).encode(),
