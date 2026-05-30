@@ -1,4 +1,5 @@
 import math
+import os
 import pygame
 from config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, ARENA_RECT, CASTLE_SIZE,
@@ -7,6 +8,8 @@ from config import (
     CANNON_LENGTH, CANNON_WIDTH,
     BG_COLOR, ARENA_COLOR, ARENA_WALL_COLOR,
 )
+
+DEBUG = os.environ.get("REBOUND_DEBUG", "0") == "1"
 
 def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
     """Render game state.
@@ -396,8 +399,12 @@ def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
     
     if t_values:
         t = min(t_values)  # Closest intersection
+        if DEBUG:
+            print(f"       [RAY] P{owner}: hit at t={t:.2f}, walls={len([tv for tv in t_values if tv < 1000])}, obstacles checked={len(obstacles)}")
         return cx + t * dx, cy + t * dy
     
+    if DEBUG:
+        print(f"       [RAY] P{owner}: NO HIT (fallback), walls={len(t_values)}, obstacles={len(obstacles)}")
     # Fallback: return a point far away
     return cx + dx * 1000, cy + dy * 1000
 
@@ -425,6 +432,11 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
     # Cast ray to find actual hit point
     ex, ey = _ray_cast_to_boundary(sx, sy, angle, owner, obstacles, clamp_to_quadrant)
     
+    if DEBUG:
+        print(f"[AIM] P{owner}: style={style}, clamp={clamp_to_quadrant}, fade={fade}")
+        print(f"       cannon_angle={angle:.3f}, start=({sx:.1f}, {sy:.1f}), end=({ex:.1f}, {ey:.1f})")
+        print(f"       obstacles={len(obstacles)}")
+    
     if style == "easy":
         # Full brightness, solid line
         color = (255, 255, 100)  # Bright yellow
@@ -447,15 +459,29 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
             y1 = sy + i * seg_dy
             x2 = sx + (i + 1) * seg_dx
             y2 = sy + (i + 1) * seg_dy
-            line_surface = pygame.Surface((int(abs(x2 - x1)) + 4, int(abs(y2 - y1)) + 4), pygame.SRCALPHA)
-            pygame.draw.line(line_surface, (*color, segment_alpha), (2, 2),
-                             (2 + int(x2 - x1), 2 + int(y2 - y1)), 2)
+            # Use absolute dimensions for surface
+            surf_w = max(4, int(abs(x2 - x1)) + 4)
+            surf_h = max(4, int(abs(y2 - y1)) + 4)
+            line_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+            # Calculate line endpoints relative to surface origin
+            rel_x1 = 2
+            rel_y1 = 2
+            rel_x2 = 2 + int(x2 - x1)
+            rel_y2 = 2 + int(y2 - y1)
+            pygame.draw.line(line_surface, (*color, segment_alpha), (rel_x1, rel_y1), (rel_x2, rel_y2), 2)
             screen.blit(line_surface, (int(x1) - 2, int(y1) - 2))
     else:
         # Create surface with alpha for transparency
-        line_surface = pygame.Surface((int(abs(ex - sx)) + 4, int(abs(ey - sy)) + 4), pygame.SRCALPHA)
-        pygame.draw.line(line_surface, (*color, base_alpha), (2, 2), 
-                         (2 + int(ex - sx), 2 + int(ey - sy)), 2)
+        # Use absolute dimensions for surface
+        surf_w = max(4, int(abs(ex - sx)) + 4)
+        surf_h = max(4, int(abs(ey - sy)) + 4)
+        line_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        # Calculate line endpoints relative to surface origin
+        rel_x1 = 2
+        rel_y1 = 2
+        rel_x2 = 2 + int(ex - sx)
+        rel_y2 = 2 + int(ey - sy)
+        pygame.draw.line(line_surface, (*color, base_alpha), (rel_x1, rel_y1), (rel_x2, rel_y2), 2)
         screen.blit(line_surface, (int(sx) - 2, int(sy) - 2))
 
 # Pre-rendered shield surfaces (created on first use)
