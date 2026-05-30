@@ -440,49 +440,26 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
     if style == "easy":
         # Full brightness, solid line
         color = (255, 255, 100)  # Bright yellow
-        base_alpha = 255
     else:  # medium
         # Fainter, semi-transparent
         color = (200, 200, 80)
-        base_alpha = 128
     
     if fade:
-        # Draw multiple segments with decreasing alpha
+        # Draw multiple segments with decreasing brightness
         num_segments = 12
         seg_dx = (ex - sx) / num_segments
         seg_dy = (ey - sy) / num_segments
         for i in range(num_segments):
-            segment_alpha = int(base_alpha * (1.0 - i / num_segments))
-            if segment_alpha < 10:
-                break
-            x1 = sx + i * seg_dx
-            y1 = sy + i * seg_dy
-            x2 = sx + (i + 1) * seg_dx
-            y2 = sy + (i + 1) * seg_dy
-            # Use absolute dimensions for surface
-            surf_w = max(4, int(abs(x2 - x1)) + 4)
-            surf_h = max(4, int(abs(y2 - y1)) + 4)
-            line_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-            # Calculate line endpoints relative to surface origin
-            rel_x1 = 2
-            rel_y1 = 2
-            rel_x2 = 2 + int(x2 - x1)
-            rel_y2 = 2 + int(y2 - y1)
-            pygame.draw.line(line_surface, (*color, segment_alpha), (rel_x1, rel_y1), (rel_x2, rel_y2), 2)
-            screen.blit(line_surface, (int(x1) - 2, int(y1) - 2))
+            brightness = 1.0 - i / num_segments
+            seg_color = (int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness))
+            x1 = int(sx + i * seg_dx)
+            y1 = int(sy + i * seg_dy)
+            x2 = int(sx + (i + 1) * seg_dx)
+            y2 = int(sy + (i + 1) * seg_dy)
+            pygame.draw.line(screen, seg_color, (x1, y1), (x2, y2), 2)
     else:
-        # Create surface with alpha for transparency
-        # Use absolute dimensions for surface
-        surf_w = max(4, int(abs(ex - sx)) + 4)
-        surf_h = max(4, int(abs(ey - sy)) + 4)
-        line_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-        # Calculate line endpoints relative to surface origin
-        rel_x1 = 2
-        rel_y1 = 2
-        rel_x2 = 2 + int(ex - sx)
-        rel_y2 = 2 + int(ey - sy)
-        pygame.draw.line(line_surface, (*color, base_alpha), (rel_x1, rel_y1), (rel_x2, rel_y2), 2)
-        screen.blit(line_surface, (int(sx) - 2, int(sy) - 2))
+        # Draw line directly on screen
+        pygame.draw.line(screen, color, (int(sx), int(sy)), (int(ex), int(ey)), 2)
 
 # Pre-rendered shield surfaces (created on first use)
 _shield_outline = None
