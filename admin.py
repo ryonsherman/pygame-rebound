@@ -16,7 +16,7 @@ import nats
 from src.nats_common import (
     NATS_SERVER, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
     SUBJECT_ADMIN_LIST, SUBJECT_ADMIN_STOP, SUBJECT_ADMIN_KICK,
-    SUBJECT_ADMIN_JOIN, SUBJECT_ADMIN_BOTS, SUBJECT_MATCH, sub_game, encode_msg, decode_msg, decode_state,
+    SUBJECT_ADMIN_JOIN, SUBJECT_ADMIN_KILL, SUBJECT_ADMIN_BOTS, SUBJECT_MATCH, sub_game, encode_msg, decode_msg, decode_state,
     sign_request,
 )
 

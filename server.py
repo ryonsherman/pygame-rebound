@@ -36,8 +36,8 @@ class GameRoom:
         slot = min(self.open_slots)
         self.open_slots.remove(slot)
         self.players[slot] = True
-        self.engine.human_players.add(slot)
         if not bot:
+            self.engine.human_players.add(slot)
             self.real_players.add(slot)
         if self.status == "playing":
             self.engine.remove_ai(slot)
