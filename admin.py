@@ -11,6 +11,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import pygame
 import nats
 from src.nats_common import (
     NATS_SERVER, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
@@ -60,8 +61,8 @@ def _raise_window():
 HELP_TEXT = """
 Commands:
   games          List active games
-  join <id>      Join a game as a player (takes an open slot)
-  spectate <id>  Watch a game (opens pygame window)
+  join [id]      Join a game as a player (takes an open slot). Omits id to auto-join only game
+  spectate [id]  Watch a game (opens pygame window). Omits id to auto-spectate only game
   bots [diff]    Spawn 4 bots into a match (default: medium)
   kick <id> <s>  Kick player in slot <s> from game <id>
   stop           Gracefully stop the server
@@ -95,18 +96,32 @@ async def cmd_games(nc, password=None):
 
 async def _check_game(nc, game_id, password=None):
     """Return (full_game_id, status) tuple. Supports prefix matching.
-    Returns (None, None) if not found, (None, 'ambiguous') if multiple matches."""
+    Returns (None, None) if not found, (None, 'ambiguous') if multiple matches.
+    If game_id is None and only one active game exists, returns that game.
+    """
     msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         return None, None
     games = data.get("games", [])
+    # Filter out finished games
+    active_games = [g for g in games if g["status"] != "finished"]
+    
+    if not active_games:
+        return None, None
+    
+    # If no game_id specified and only one active game, use it
+    if game_id is None:
+        if len(active_games) == 1:
+            return active_games[0]["game_id"], active_games[0]["status"]
+        return None, "ambiguous"
+    
     # Exact match first
-    for g in games:
+    for g in active_games:
         if g["game_id"] == game_id:
             return g["game_id"], g["status"]
     # Prefix match
-    matches = [g for g in games if g["game_id"].startswith(game_id)]
+    matches = [g for g in active_games if g["game_id"].startswith(game_id)]
     if len(matches) == 1:
         return matches[0]["game_id"], matches[0]["status"]
     if len(matches) > 1:
@@ -133,9 +148,23 @@ async def cmd_kick(nc, game_id, slot, password=None):
         print(f"  Error: {data.get('error')}")
 
 
-async def cmd_join(nc, game_id, password=None):
-    """Join a game as a human player, replacing a bot if needed."""
-    payload = {"game_id": game_id}
+async def cmd_join(nc, game_id=None, password=None):
+    """Join a game as a human player, replacing a bot if needed.
+    If game_id is None and only one active game exists, auto-join that game.
+    """
+    # Resolve game_id (auto-select if only one active game)
+    full_game_id, status = await _check_game(nc, game_id, password)
+    if full_game_id is None:
+        if status == "ambiguous":
+            print("  Error: Multiple games match. Use: join <game_id>")
+        else:
+            print("  Error: No active games found. Use: join <game_id>")
+        return
+    if status == "finished":
+        print(f"  Error: Game {full_game_id} has finished.")
+        return
+    
+    payload = {"game_id": full_game_id}
     msg = await nc.request(SUBJECT_ADMIN_JOIN, _signed(payload, password), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
@@ -143,7 +172,7 @@ async def cmd_join(nc, game_id, password=None):
         return
 
     slot = data["slot"]
-    print(f"  Joined game {game_id} as slot {slot} — press Q/Esc to leave")
+    print(f"  Joined game {full_game_id} as slot {slot} — press Q/Esc to leave")
 
     import pygame
     import math
@@ -154,7 +183,7 @@ async def cmd_join(nc, game_id, password=None):
     os.environ["SDL_VIDEO_WINDOW_POS"] = "center"
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption(f"Rebound — Player {slot} in {game_id}")
+    pygame.display.set_caption(f"Rebound — Player {slot} in {full_game_id}")
     _raise_window()
     clock = pygame.time.Clock()
 
@@ -168,8 +197,8 @@ async def cmd_join(nc, game_id, password=None):
         except Exception:
             pass
 
-    sub = await nc.subscribe(sub_game(game_id, "state"), cb=on_state)
-    input_subj = sub_game(game_id, "input", str(slot))
+    sub = await nc.subscribe(sub_game(full_game_id, "state"), cb=on_state)
+    input_subj = sub_game(full_game_id, "input", str(slot))
 
     running = True
     while running:
@@ -223,13 +252,13 @@ async def cmd_join(nc, game_id, password=None):
         await asyncio.sleep(0)
 
     # Leave the game
-    await nc.publish(sub_game(game_id, "leave"), encode_msg({"slot": slot}))
+    await nc.publish(sub_game(full_game_id, "leave"), encode_msg({"slot": slot}))
     await sub.unsubscribe()
     pygame.display.set_mode((1, 1))
     pygame.display.quit()
     pygame.quit()
     _fix_terminal()
-    print(f"  Left game {game_id}.")
+    print(f"  Left game {full_game_id}.")
 
 
 async def cmd_bots(nc, difficulty="medium"):
@@ -248,9 +277,23 @@ async def cmd_bots(nc, difficulty="medium"):
     return game_id, tasks
 
 
-async def cmd_spectate(nc, game_id):
-    """Subscribe to state and render in pygame."""
-    print(f"  Spectating game {game_id} — press Q/Esc to stop")
+async def cmd_spectate(nc, game_id=None):
+    """Subscribe to state and render in pygame.
+    If game_id is None and only one active game exists, auto-spectate that game.
+    """
+    # Resolve game_id (auto-select if only one active game)
+    full_game_id, status = await _check_game(nc, game_id)
+    if full_game_id is None:
+        if status == "ambiguous":
+            print("  Error: Multiple games match. Use: spectate <game_id>")
+        else:
+            print("  Error: No active games found. Use: spectate <game_id>")
+        return
+    if status == "finished":
+        print(f"  Error: Game {full_game_id} has finished.")
+        return
+    
+    print(f"  Spectating game {full_game_id} — press Q/Esc to stop")
 
     import pygame
     from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR
@@ -260,7 +303,7 @@ async def cmd_spectate(nc, game_id):
     os.environ["SDL_VIDEO_WINDOW_POS"] = "center"
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption(f"Rebound — Spectating {game_id}")
+    pygame.display.set_caption(f"Rebound — Spectating {full_game_id}")
     _raise_window()
     clock = pygame.time.Clock()
 
@@ -274,7 +317,7 @@ async def cmd_spectate(nc, game_id):
         except Exception:
             pass
 
-    sub = await nc.subscribe(sub_game(game_id, "state"), cb=on_state)
+    sub = await nc.subscribe(sub_game(full_game_id, "state"), cb=on_state)
 
     running = True
     while running:
@@ -399,33 +442,11 @@ async def main():
                     last_game_id = game_id
                     bot_tasks.extend(tasks)
             elif cmd == "join":
-                gid_input = parts[1] if len(parts) > 1 else last_game_id
-                if not gid_input:
-                    print("  Usage: join <game_id>")
-                else:
-                    gid, status = await _check_game(nc, gid_input, password)
-                    if status == "ambiguous":
-                        print(f"  Ambiguous ID '{gid_input}' — be more specific.")
-                    elif status == "finished":
-                        print(f"  Game {gid} is over.")
-                    elif gid is None:
-                        print(f"  Game '{gid_input}' not found.")
-                    else:
-                        await cmd_join(nc, gid, password)
+                gid_input = parts[1] if len(parts) > 1 else None
+                await cmd_join(nc, gid_input, password)
             elif cmd == "spectate":
-                gid_input = parts[1] if len(parts) > 1 else last_game_id
-                if not gid_input:
-                    print("  Usage: spectate <game_id>")
-                else:
-                    gid, status = await _check_game(nc, gid_input, password)
-                    if status == "ambiguous":
-                        print(f"  Ambiguous ID '{gid_input}' — be more specific.")
-                    elif status == "finished":
-                        print(f"  Game {gid} is over.")
-                    elif gid is None:
-                        print(f"  Game '{gid_input}' not found.")
-                    else:
-                        await cmd_spectate(nc, gid)
+                gid_input = parts[1] if len(parts) > 1 else None
+                await cmd_spectate(nc, gid_input)
             else:
                 print(f"  Unknown command: {cmd}")
                 print("  Type 'help' for available commands")
