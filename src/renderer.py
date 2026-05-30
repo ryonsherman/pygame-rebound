@@ -251,36 +251,14 @@ def draw_cannon(screen, center, angle, owner):
     pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
 
 
-def _ray_cast_to_boundary(cx, cy, angle, obstacles, clamp_to_quadrant):
+def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
     """Cast a ray from cannon and return the hit point.
     
-    Checks collision with arena walls and obstacles (barricades).
+    Checks collision with arena walls, obstacles (barricades), and blockades.
     Returns (ex, ey) - the endpoint where the ray hits.
     """
     ax, ay, aw, ah = ARENA_RECT
     arena_cx, arena_cy = ax + aw // 2, ay + ah // 2
-    
-    # Define quadrant boundaries based on owner
-    if clamp_to_quadrant:
-        # Determine which quadrant based on starting position
-        if cx > arena_cx and cy > arena_cy:
-            owner_zone = 0  # Bottom-right
-            max_x, max_y = arena_cx - 1, arena_cy - 1
-        elif cx < arena_cx and cy < arena_cy:
-            owner_zone = 1  # Top-left
-            min_x, min_y = arena_cx + 1, arena_cy + 1
-        elif cx > arena_cx and cy < arena_cy:
-            owner_zone = 2  # Top-right
-            max_x, min_y = arena_cx - 1, arena_cy + 1
-        else:
-            owner_zone = 3  # Bottom-left
-            min_x, max_y = arena_cx + 1, arena_cy - 1
-    else:
-        # Can go anywhere, hit arena walls
-        max_x = ax + aw
-        max_y = ay + ah
-        min_x = ax
-        min_y = ay
     
     # Ray direction
     dx = math.cos(angle)
@@ -323,88 +301,98 @@ def _ray_cast_to_boundary(cx, cy, angle, obstacles, clamp_to_quadrant):
     
     # Check quadrant boundary if clamped
     if clamp_to_quadrant:
-        if owner_zone == 0:  # Bottom-right, clamp to up-left
-            if dx < 0:
+        if owner == 0:  # Bottom-right, clamp to up-left (can't cross center lines)
+            if dx < 0:  # aiming left
                 t = (arena_cx - 1 - cx) / dx
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     y = cy + t * dy
                     if ay <= y <= arena_cy - 1:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-            if dy < 0:
+                        t_values.append(t)
+            if dy < 0:  # aiming up
                 t = (arena_cy - 1 - cy) / dy
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     x = cx + t * dx
                     if ax <= x <= arena_cx - 1:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-        elif owner_zone == 1:  # Top-left, clamp to down-right
-            if dx > 0:
+                        t_values.append(t)
+        elif owner == 1:  # Top-left, clamp to down-right
+            if dx > 0:  # aiming right
                 t = (arena_cx + 1 - cx) / dx
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     y = cy + t * dy
                     if arena_cy + 1 <= y <= ay + ah:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-            if dy > 0:
+                        t_values.append(t)
+            if dy > 0:  # aiming down
                 t = (arena_cy + 1 - cy) / dy
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     x = cx + t * dx
                     if arena_cx + 1 <= x <= ax + aw:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-        elif owner_zone == 2:  # Top-right, clamp to down-left
-            if dx < 0:
+                        t_values.append(t)
+        elif owner == 2:  # Top-right, clamp to down-left
+            if dx < 0:  # aiming left
                 t = (arena_cx - 1 - cx) / dx
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     y = cy + t * dy
                     if arena_cy + 1 <= y <= ay + ah:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-            if dy > 0:
+                        t_values.append(t)
+            if dy > 0:  # aiming down
                 t = (arena_cy + 1 - cy) / dy
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     x = cx + t * dx
                     if ax <= x <= arena_cx - 1:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-        else:  # owner_zone == 3, Bottom-left, clamp to up-right
-            if dx > 0:
+                        t_values.append(t)
+        else:  # owner == 3, Bottom-left, clamp to up-right
+            if dx > 0:  # aiming right
                 t = (arena_cx + 1 - cx) / dx
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     y = cy + t * dy
                     if ay <= y <= arena_cy - 1:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
-            if dy < 0:
+                        t_values.append(t)
+            if dy < 0:  # aiming up
                 t = (arena_cy - 1 - cy) / dy
-                if t > 0 and t < min(t_values) if t_values else True:
+                if t > 0:
                     x = cx + t * dx
                     if arena_cx + 1 <= x <= ax + aw:
-                        t_values = [t] + [tv for tv in t_values if tv >= t]
+                        t_values.append(t)
     
-    # Check collision with obstacles (barricades)
+    # Check collision with obstacles (barricades and blockades)
     for obs in obstacles:
         rx, ry, rw, rh = obs["rect"]
         # Ray vs AABB intersection
-        t_min = 0
-        t_max = float('inf')
+        t_hit = float('inf')
         
-        if dx != 0:
-            t1 = (rx - cx) / dx
-            t2 = (rx + rw - cx) / dx
-            t_min = max(t_min, min(t1, t2))
-            t_max = min(t_max, max(t1, t2))
-        else:
+        # Check if ray is parallel to slab
+        if abs(dx) < 0.0001:
             if cx < rx or cx > rx + rw:
                 continue
-        
-        if dy != 0:
-            t1 = (ry - cy) / dy
-            t2 = (ry + rh - cy) / dy
-            t_min = max(t_min, min(t1, t2))
-            t_max = min(t_max, max(t1, t2))
         else:
+            t1 = (rx - cx) / dx
+            t2 = (rx + rw - cx) / dx
+            t_min = min(t1, t2)
+            t_max = max(t1, t2)
+            if t_max < 0:
+                continue
+            t_hit = max(0, t_min) if t_min > 0 else t_hit
+        
+        if abs(dy) < 0.0001:
             if cy < ry or cy > ry + rh:
                 continue
+        else:
+            t1 = (ry - cy) / dy
+            t2 = (ry + rh - cy) / dy
+            t_min = min(t1, t2)
+            t_max = max(t1, t2)
+            if t_max < 0:
+                continue
+            if t_min > t_hit:
+                continue
         
-        if t_min <= t_max and t_max > 0:
-            t_hit = max(0, t_min)
-            if t_hit > 0 and (not t_values or t_hit < min(t_values)):
-                t_values.append(t_hit)
+        # Validate hit point is on rectangle boundary
+        if t_hit > 0 and t_hit < float('inf'):
+            hx = cx + t_hit * dx
+            hy = cy + t_hit * dy
+            if rx <= hx <= rx + rw and ry <= hy <= ry + rh:
+                if not t_values or t_hit < min(t_values):
+                    t_values.append(t_hit)
     
     if t_values:
         t = min(t_values)  # Closest intersection
@@ -427,6 +415,7 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
     
     center = castle["center"]
     angle = castle["cannon_angle"]
+    owner = castle["owner"]
     
     # Start from cannon tip (same calculation as draw_cannon)
     start_dist = CASTLE_SIZE // 2 + 6 + CANNON_LENGTH
@@ -434,7 +423,7 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
     sy = center[1] + math.sin(angle) * start_dist
     
     # Cast ray to find actual hit point
-    ex, ey = _ray_cast_to_boundary(sx, sy, angle, obstacles, clamp_to_quadrant)
+    ex, ey = _ray_cast_to_boundary(sx, sy, angle, owner, obstacles, clamp_to_quadrant)
     
     if style == "easy":
         # Full brightness, solid line
