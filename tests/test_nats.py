@@ -32,13 +32,15 @@ def test_matchmaking():
 
     async def client():
         from config import NATS_URL
+        from src.nats_common import encode_msg, decode_msg, decode_state, sub_game
+
         nc = await nats.connect(NATS_URL)
         msg = await nc.request(
             SUBJECT_MATCH,
-            json.dumps({"difficulty": "medium"}).encode(),
+            encode_msg({"difficulty": "medium"}),
             timeout=10,
         )
-        result = json.loads(msg.data.decode())
+        result = decode_msg(msg.data)
         assert result.get("ok"), f"Match failed: {result}"
 
         game_id = result["game_id"]
@@ -48,7 +50,6 @@ def test_matchmaking():
         status_queue = queue.Queue(maxsize=10)
 
         async def on_state(msg):
-            from src.nats_common import decode_state
             state = decode_state(msg.data)
             try:
                 state_queue.put_nowait(state)
@@ -56,17 +57,16 @@ def test_matchmaking():
                 pass
 
         async def on_status(msg):
-            data = json.loads(msg.data.decode())
+            data = decode_msg(msg.data)
             try:
                 status_queue.put_nowait(data)
             except queue.Full:
                 pass
 
-        from src.nats_common import sub_game
         state_sub = await nc.subscribe(sub_game(game_id, "state"), cb=on_state)
         status_sub = await nc.subscribe(sub_game(game_id, "status"), cb=on_status)
 
-        await nc.publish(sub_game(game_id, "input", str(slot)), json.dumps({"mouse_x": 500, "mouse_y": 400, "space": False, "click": False}).encode())
+        await nc.publish(sub_game(game_id, "input", str(slot)), encode_msg({"mouse_x": 500, "mouse_y": 400, "space": False, "click": False}))
 
         for _ in range(100):
             try:
@@ -80,8 +80,7 @@ def test_matchmaking():
         else:
             print("[TEST] No state received within timeout")
 
-        from src.nats_common import sub_game
-        await nc.publish(sub_game(game_id, "leave"), json.dumps({"slot": slot}).encode())
+        await nc.publish(sub_game(game_id, "leave"), encode_msg({"slot": slot}))
         await nc.drain()
 
     asyncio.run(client())

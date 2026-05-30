@@ -16,7 +16,7 @@ from src.sounds import play_sound_events
 
 from src.nats_common import (
     NATS_SERVER, CONNECT_TIMEOUT, REQUEST_TIMEOUT, SUBJECT_MATCH,
-    sub_game, encode_state, decode_state,
+    sub_game, encode_msg, decode_msg, decode_state,
 )
 
 
@@ -52,10 +52,10 @@ class NATSClient:
         self._nc = await nats.connect(NATS_SERVER, name=NATS_NAME)
         msg = await self._nc.request(
             SUBJECT_MATCH,
-            json.dumps({"difficulty": difficulty}).encode(),
+            encode_msg({"difficulty": difficulty}),
             timeout=REQUEST_TIMEOUT,
         )
-        result = json.loads(msg.data.decode())
+        result = decode_msg(msg.data)
         if result.get("ok"):
             self.game_id = result["game_id"]
             self.slot = result["slot"]
@@ -80,7 +80,7 @@ class NATSClient:
 
     async def _on_status(self, msg):
         try:
-            data = json.loads(msg.data.decode())
+            data = decode_msg(msg.data)
             self.status_queue.put_nowait(data)
         except queue.Full:
             pass
@@ -91,14 +91,14 @@ class NATSClient:
         if self._nc and self.game_id is not None and self.slot is not None:
             subj = sub_game(self.game_id, "input", str(self.slot))
             asyncio.run_coroutine_threadsafe(
-                self._nc.publish(subj, json.dumps(inp).encode()), self._loop
+                self._nc.publish(subj, encode_msg(inp)), self._loop
             )
 
     def send_leave(self):
         if self._nc and self.game_id is not None and self.slot is not None:
             subj = sub_game(self.game_id, "leave")
             asyncio.run_coroutine_threadsafe(
-                self._nc.publish(subj, json.dumps({"slot": self.slot}).encode()), self._loop
+                self._nc.publish(subj, encode_msg({"slot": self.slot})), self._loop
             )
 
     def close(self):
@@ -117,7 +117,7 @@ WHITE = (255, 255, 255)
 
 
 class App:
-    def __init__(self):
+    def __init__(self, spectate=False):
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         pygame.display.set_caption("Rebound")
@@ -126,10 +126,11 @@ class App:
         self.game = None
         self.nats = None
         self.state = "menu"
+        self.spectate = spectate
         self.error_msg = None
         self.error_timer = 0
         self.prev_mouse_down = False
-        self.muted = False
+        self.muted = True
         self.latest_state = None
 
     def run(self):
@@ -172,7 +173,7 @@ class App:
                     if isinstance(result, dict) and result.get("online"):
                         self._start_online()
                     else:
-                        self.game = Game(self.screen, result)
+                        self.game = Game(self.screen, result, spectate=self.spectate)
                         self.state = "game"
         return None
 
@@ -303,7 +304,7 @@ class App:
 
 if __name__ == "__main__":
     try:
-        App().run()
-    except KeyboardInterrupt:
+        App(spectate="--spectate" in sys.argv).run()
+    except (KeyboardInterrupt, SystemExit):
         pygame.quit()
         sys.exit(0)
