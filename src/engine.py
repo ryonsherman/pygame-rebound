@@ -12,8 +12,6 @@ from config import (
 def _sound_vol(p):
     return max(0.2, min(1.0, p["radius"] / PROJECTILE_RADIUS))
 
-DEBUG = False
-
 def _clamp_aim(owner, mx, my, cx, cy):
     ax, ay, aw, ah = ARENA_RECT
     if owner == 0:
@@ -121,6 +119,11 @@ def _make_blockade(x, y):
     }
 
 COLOR_LETTERS = ["R", "B", "G", "Y"]
+
+def _tag(owner, human_players):
+    """Return color letter with :AI suffix for bots."""
+    letter = COLOR_LETTERS[owner]
+    return letter if owner in human_players else f"{letter}:AI"
 OBSTACLE_COLOR = (100, 100, 110)
 
 def _init_obstacles():
@@ -383,7 +386,7 @@ class AIController:
                                random.randint(-self.aim_spread, self.aim_spread))
             self.retarget_timer = random.randint(15, 45)
             self._pick_aim_point(chosen[0], my_castle["center"], castles)
-            if DEBUG: print(f"{COLOR_LETTERS[self.owner]} → targeting {COLOR_LETTERS[self.target]} (bounce)")
+            if DEBUG: print(f"{COLOR_LETTERS[self.owner]}:AI → targeting {COLOR_LETTERS[self.target]} (bounce)")
 
         if self.aim_point:
             cx, cy = my_castle["center"]
@@ -412,7 +415,7 @@ class AIController:
                                       math.cos(target_angle - self.current_angle)))
                 if diff < self.sling_threshold:
                     self._fire(my_castle)
-                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]} → fired at {COLOR_LETTERS[self.target]}")
+                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]}:AI → fired at {COLOR_LETTERS[self.target]}")
                     self.fire_timer = random.randint(*self.fire_interval)
             else:
                 self.fire_timer = random.randint(*self.fire_interval)
@@ -453,9 +456,9 @@ class AIController:
             if not my_castle["shield"]["active"] and my_castle["shield"]["cooldown_timer"] <= 0:
                 threat_label = f"{COLOR_LETTERS[threat_from]}" if threat_from is not None else "reflected"
                 if threat_frames and threat_frames > 0:
-                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]} → shield UP ({threat_label}'s shot in ~{threat_frames}f)")
+                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]}:AI → shield UP ({threat_label}'s shot in ~{threat_frames}f)")
                 else:
-                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]} → shield UP ({threat_label} close)")
+                    if DEBUG: print(f"{COLOR_LETTERS[self.owner]}:AI → shield UP ({threat_label} close)")
                 my_castle["shield"]["active"] = True
                 my_castle["shield"]["timer"] = SHIELD_DURATION
             self.shield_hold = 10
@@ -463,7 +466,7 @@ class AIController:
             self.shield_hold -= 1
         else:
             if my_castle["shield"]["active"]:
-                if DEBUG: print(f"{COLOR_LETTERS[self.owner]} → shield DOWN (threat passed)")
+                if DEBUG: print(f"{COLOR_LETTERS[self.owner]}:AI → shield DOWN (threat passed)")
                 my_castle["shield"]["active"] = False
 
     def _fire(self, castle):
@@ -604,7 +607,7 @@ class GameEngine:
                 c["fire_request"] = None
                 self._emit_sound("cannon_fire", 1.0, c["owner"])
                 if DEBUG:
-                    if DEBUG: print(f"[FIRE] id:{projectile['id']} owner:{COLOR_LETTERS[c['owner']]} "
+                    if DEBUG: print(f"[FIRE] id:{projectile['id']} owner:{_tag(c["owner"], self.human_players)} "
                           f"pos:({px:.1f},{py:.1f}) angle:{math.degrees(fr):.0f} "
                           f"v:({projectile['vx']:.1f},{projectile['vy']:.1f})")
 
@@ -675,7 +678,7 @@ class GameEngine:
         while len(self.projectiles) > self.max_projectiles:
             removed = self.projectiles.pop(0)
             if DEBUG:
-                if DEBUG: print(f"[CULL] id:{removed['id']} owner:{COLOR_LETTERS[removed['owner']]} "
+                if DEBUG: print(f"[CULL] id:{removed['id']} owner:{_tag(removed["owner"], self.human_players)} "
                       f"pos:({removed['x']:.1f},{removed['y']:.1f}) "
                       f"b:{removed['bounces']} r:{removed['radius']}")
 
@@ -807,7 +810,7 @@ class GameEngine:
             if p["bounces"] >= self.max_bounces:
                 p["alive"] = False
                 if DEBUG:
-                    if DEBUG: print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{COLOR_LETTERS[p['owner']]}")
+                    if DEBUG: print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{_tag(p["owner"], self.human_players)}")
             elif p["bounce_cooldown"] <= 0:
                 p["radius"] = max(2, int(p["radius"] * self.bounce_shrink))
                 p["vx"] *= self.bounce_slowdown
@@ -825,7 +828,7 @@ class GameEngine:
         if p["bounces"] >= self.max_bounces:
             p["alive"] = False
             if DEBUG:
-                if DEBUG: print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{COLOR_LETTERS[p['owner']]}")
+                if DEBUG: print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{_tag(p["owner"], self.human_players)}")
         elif p["bounce_cooldown"] <= 0:
             p["radius"] = max(2, int(p["radius"] * 0.8))
             p["vx"] *= 0.88
@@ -935,8 +938,8 @@ class GameEngine:
                     blockade = self.castles[ci]["blockades"][bi]
                     remaining = sum(1 for b in blockade["bricks"] if b["alive"])
                     tag = "blockade destroyed" if remaining == 0 else "blockade hit"
-                    attacker = f"{COLOR_LETTERS[p['owner']]}" if p["owner"] is not None else "reflected"
-                    if DEBUG: print(f"{COLOR_LETTERS[ci]} → {tag} by {attacker} ({remaining} blocks left)")
+                    attacker = _tag(p["owner"], self.human_players) if p["owner"] is not None else "reflected"
+                    if DEBUG: print(f"{_tag(ci, self.human_players)} → {tag} by {attacker} ({remaining} blocks left)")
                     vol = _sound_vol(p)
                     event = "blockade_destroyed" if remaining == 0 else "blockade_hit"
                     self._emit_sound(event, vol, p["owner"])
@@ -952,12 +955,12 @@ class GameEngine:
                     brick["alive"] = False
                 projectile["alive"] = False
                 if DEBUG:
-                    if DEBUG: print(f"[DEATH] id:{projectile['id']} cause:castle_hit "
-                          f"owner:{COLOR_LETTERS[projectile['owner']]} target:{COLOR_LETTERS[castle['owner']]}")
+                    print(f"[DEATH] id:{projectile['id']} cause:castle_hit "
+                          f"owner:{_tag(projectile['owner'], self.human_players)} target:{_tag(castle['owner'], self.human_players)}")
                 remaining = sum(1 for b in castle["bricks"] if b["alive"])
                 tag = " destroyed" if destroyed else " cracked"
-                attacker_tag = f"{COLOR_LETTERS[attacker]}" if attacker is not None else "reflected"
-                if DEBUG: print(f"{COLOR_LETTERS[castle['owner']]} → HIT by {attacker_tag}{tag} ({remaining} blocks left)")
+                attacker_tag = _tag(attacker, self.human_players) if attacker is not None else "reflected"
+                if DEBUG: print(f"{_tag(castle["owner"], self.human_players)} → HIT by {attacker_tag}{tag} ({remaining} blocks left)")
                 event = "brick_destroy" if destroyed else "brick_crack"
                 self._emit_sound(event, _sound_vol(projectile), attacker)
                 if remaining == 0:
@@ -967,13 +970,13 @@ class GameEngine:
                     self.projectiles = [p for p in self.projectiles if p["owner"] != castle["owner"]]
                     if DEBUG and removed_ids:
                         print(f"[DEATH] ids:{removed_ids} cause:castle_collapse owner:{COLOR_LETTERS[castle['owner']]}")
-                    if DEBUG: print(f"{COLOR_LETTERS[castle['owner']]} → OUT")
+                    if DEBUG: print(f"{_tag(castle["owner"], self.human_players)} → OUT")
                     alive = [c for c in self.castles if c["alive"]]
                     if len(alive) == 1:
                         self.game_over = True
                         self.winner = alive[0]["owner"]
                         self._emit_sound("victory", 1.0)
-                        print(f"{COLOR_LETTERS[self.winner]} → VICTORY!")
+                        if DEBUG: print(f"{_tag(self.winner, self.human_players)} → VICTORY!")
                 return
 
     def get_state(self):
