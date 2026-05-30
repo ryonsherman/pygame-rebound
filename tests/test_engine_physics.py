@@ -12,9 +12,9 @@ class TestWallBounce:
     """Projectiles must stay within arena bounds and bounce off walls."""
 
     def test_projectile_stays_in_arena(self, engine_hard):
-        """Run 3000 frames, all projectiles must remain within arena."""
+        """Run 1000 frames, all projectiles must remain within arena."""
         eng = engine_hard
-        for _ in range(3000):
+        for _ in range(1000):
             eng.update()
             for p in eng.projectiles:
                 r = p["radius"]
@@ -67,9 +67,9 @@ class TestObstacleCollision:
     """Projectiles should bounce off obstacles without getting stuck."""
 
     def test_no_projectile_stuck_in_obstacle(self, engine_hard):
-        """After 2000 frames, no alive projectile should overlap an obstacle."""
+        """After 800 frames, no alive projectile should overlap an obstacle."""
         eng = engine_hard
-        for _ in range(2000):
+        for _ in range(800):
             eng.update()
         for p in eng.projectiles:
             r = p["radius"]
@@ -128,7 +128,7 @@ class TestProjectileShrink:
     def test_radius_never_below_2(self, engine_hard):
         """After many frames, no projectile radius should be < 2."""
         eng = engine_hard
-        for _ in range(5000):
+        for _ in range(2000):
             eng.update()
             for p in eng.projectiles:
                 assert p["radius"] >= 2

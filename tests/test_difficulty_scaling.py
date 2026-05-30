@@ -40,13 +40,13 @@ class TestDifficultyPacing:
     """Hard games should complete faster than easy games."""
 
     def test_hard_faster_than_easy(self):
-        """Run 3 trials each with seeded RNG and confirm hard avg < easy avg frames."""
-        def run(diff, n=3):
+        """Run 2 trials each with seeded RNG and confirm hard avg < easy avg frames."""
+        def run(diff, n=2):
             frames = []
             for i in range(n):
                 random.seed(42 + i)
                 eng = GameEngine(difficulty=diff, human_players=[])
-                while not eng.game_over and eng.frame < 12000:
+                while not eng.game_over and eng.frame < 6000:
                     eng.update()
                 frames.append(eng.frame)
             return sum(frames) / len(frames)

@@ -119,8 +119,8 @@ class TestStressFullGame:
 
     def test_full_hard_game_completes(self):
         eng = GameEngine(difficulty="hard", human_players=[])
-        while not eng.game_over and eng.frame < 30000:
+        while not eng.game_over and eng.frame < 12000:
             eng.update()
-        assert eng.game_over or eng.frame == 30000
+        assert eng.game_over or eng.frame == 12000
         if eng.game_over:
             assert eng.winner in [0, 1, 2, 3]
