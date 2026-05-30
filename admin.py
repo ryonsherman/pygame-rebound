@@ -73,15 +73,17 @@ Commands:
 """.strip()
 
 
-def _signed(payload, password):
+def _signed(payload, password, admin_id=None):
     """Sign a payload if password is set, then encode for NATS."""
+    if admin_id:
+        payload = dict(payload, admin_id=admin_id)
     if password:
         payload = sign_request(payload, password)
     return encode_msg(payload) if payload else b""
 
 
-async def cmd_games(nc, password=None):
-    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password), timeout=REQUEST_TIMEOUT)
+async def cmd_games(nc, password=None, admin_id=None):
+    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         print(f"  Error: {data.get('error')}")
@@ -97,7 +99,7 @@ async def cmd_games(nc, password=None):
               f"players:[{slots_str}]{admin_tag}  frame:{g['frame']}")
 
 
-async def cmd_list(nc, game_id, password=None):
+async def cmd_list(nc, game_id, password=None, admin_id=None):
     """List players/bots in a specific game room."""
     full_game_id, status = await _check_game(nc, game_id, password)
     if full_game_id is None:
@@ -107,7 +109,7 @@ async def cmd_list(nc, game_id, password=None):
             print("  Error: No active games found. Use: list <game_id>")
         return
     
-    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password), timeout=REQUEST_TIMEOUT)
+    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         print(f"  Error: {data.get('error')}")
@@ -126,12 +128,12 @@ async def cmd_list(nc, game_id, password=None):
     print(f"    Frame: {room['frame']}")
 
 
-async def _check_game(nc, game_id, password=None):
+async def _check_game(nc, game_id, password=None, admin_id=None):
     """Return (full_game_id, status) tuple. Supports prefix matching.
     Returns (None, None) if not found, (None, 'ambiguous') if multiple matches.
     If game_id is None and only one active game exists, returns that game.
     """
-    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password), timeout=REQUEST_TIMEOUT)
+    msg = await nc.request(SUBJECT_ADMIN_LIST, _signed({}, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         return None, None
@@ -161,8 +163,8 @@ async def _check_game(nc, game_id, password=None):
     return None, None
 
 
-async def cmd_stop(nc, password=None):
-    msg = await nc.request(SUBJECT_ADMIN_STOP, _signed({}, password), timeout=REQUEST_TIMEOUT)
+async def cmd_stop(nc, password=None, admin_id=None):
+    msg = await nc.request(SUBJECT_ADMIN_STOP, _signed({}, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         print(f"  Error: {data.get('error')}")
@@ -170,9 +172,9 @@ async def cmd_stop(nc, password=None):
     print(f"  {data.get('message', 'Done')}")
 
 
-async def cmd_kick(nc, game_id, slot, password=None):
+async def cmd_kick(nc, game_id, slot, password=None, admin_id=None):
     payload = {"game_id": game_id, "slot": int(slot)}
-    msg = await nc.request(SUBJECT_ADMIN_KICK, _signed(payload, password), timeout=REQUEST_TIMEOUT)
+    msg = await nc.request(SUBJECT_ADMIN_KICK, _signed(payload, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if data.get("ok"):
         print(f"  Kicked slot {slot} from {game_id}")
@@ -180,7 +182,7 @@ async def cmd_kick(nc, game_id, slot, password=None):
         print(f"  Error: {data.get('error')}")
 
 
-async def cmd_join(nc, game_id=None, password=None):
+async def cmd_join(nc, game_id=None, password=None, admin_id=None):
     """Join a game as a human player, replacing a bot if needed.
     If game_id is None and only one active game exists, auto-join that game.
     """
@@ -197,7 +199,7 @@ async def cmd_join(nc, game_id=None, password=None):
         return
     
     payload = {"game_id": full_game_id}
-    msg = await nc.request(SUBJECT_ADMIN_JOIN, _signed(payload, password), timeout=REQUEST_TIMEOUT)
+    msg = await nc.request(SUBJECT_ADMIN_JOIN, _signed(payload, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         print(f"  Error: {data.get('error')}")
@@ -293,10 +295,10 @@ async def cmd_join(nc, game_id=None, password=None):
     print(f"  Left game {full_game_id}.")
 
 
-async def cmd_bots(nc, difficulty="medium", password=None):
+async def cmd_bots(nc, difficulty="medium", password=None, admin_id=None):
     """Create a room with 4 server-side AI players (no client processes needed)."""
     print(f"  Creating room with 4 server-side AI bots ({difficulty})...")
-    msg = await nc.request(SUBJECT_ADMIN_BOTS, _signed({"difficulty": difficulty}, password), timeout=REQUEST_TIMEOUT)
+    msg = await nc.request(SUBJECT_ADMIN_BOTS, _signed({"difficulty": difficulty}, password, admin_id), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
     if not data.get("ok"):
         print(f"  Error: {data.get('error')}")
@@ -307,12 +309,12 @@ async def cmd_bots(nc, difficulty="medium", password=None):
     return game_id, []
 
 
-async def cmd_spectate(nc, game_id=None, password=None):
+async def cmd_spectate(nc, game_id=None, password=None, admin_id=None):
     """Subscribe to state and render in pygame.
     If game_id is None and only one active game exists, auto-spectate that game.
     """
     # Resolve game_id (auto-select if only one active game)
-    full_game_id, status = await _check_game(nc, game_id, password)
+    full_game_id, status = await _check_game(nc, game_id, password, admin_id)
     if full_game_id is None:
         if status == "ambiguous":
             print("  Error: Multiple games match. Use: spectate <game_id>")
@@ -390,7 +392,11 @@ async def cmd_spectate(nc, game_id=None, password=None):
 
 
 async def main():
+    import uuid
     password = sys.argv[1] if len(sys.argv) > 1 else None
+    
+    # Generate unique admin ID for this session
+    admin_id = uuid.uuid4().hex[:6]
 
     print("Connecting to NATS...")
     nc = await nats.connect(NATS_SERVER, connect_timeout=CONNECT_TIMEOUT)
@@ -410,6 +416,7 @@ async def main():
         return
 
     print("Authenticated." if password else "Connected (no password required).")
+    print(f"Your admin ID: {admin_id}")
     print(HELP_TEXT)
     print()
 
@@ -442,15 +449,15 @@ async def main():
             elif cmd == "help":
                 print(HELP_TEXT)
             elif cmd == "games":
-                await cmd_games(nc, password)
+                await cmd_games(nc, password, admin_id)
             elif cmd == "list":
                 gid_input = parts[1] if len(parts) > 1 else None
-                await cmd_list(nc, gid_input, password)
+                await cmd_list(nc, gid_input, password, admin_id)
             elif cmd == "kick":
                 if len(parts) < 3:
                     print("  Usage: kick <game_id> <slot>")
                 else:
-                    gid, status = await _check_game(nc, parts[1], password)
+                    gid, status = await _check_game(nc, parts[1], password, admin_id)
                     if status == "ambiguous":
                         print(f"  Ambiguous ID '{parts[1]}' — be more specific.")
                     elif status == "finished":
@@ -458,38 +465,36 @@ async def main():
                     elif gid is None:
                         print(f"  Game '{parts[1]}' not found.")
                     else:
-                        await cmd_kick(nc, gid, parts[2], password)
+                        await cmd_kick(nc, gid, parts[2], password, admin_id)
+            elif cmd == "stop":
+                await cmd_stop(nc, password, admin_id)
             elif cmd == "bots":
-                # Reset last_game_id if previous bot tasks have all completed
-                if last_game_id and bot_tasks and all(t.done() for t in bot_tasks):
-                    last_game_id = None
-                    bot_tasks.clear()
                 if last_game_id:
                     print(f"  Bot game already running: {last_game_id}")
                 else:
                     diff = parts[1] if len(parts) > 1 else "medium"
-                    game_id, tasks = await cmd_bots(nc, diff, password)
+                    game_id, tasks = await cmd_bots(nc, diff, password, admin_id)
                     last_game_id = game_id
                     bot_tasks.extend(tasks)
             elif cmd == "join":
                 gid_input = parts[1] if len(parts) > 1 else None
-                await cmd_join(nc, gid_input, password)
+                await cmd_join(nc, gid_input, password, admin_id)
             elif cmd == "spectate":
                 gid_input = parts[1] if len(parts) > 1 else None
-                await cmd_spectate(nc, gid_input, password)
+                await cmd_spectate(nc, gid_input, password, admin_id)
             elif cmd == "kill":
                 gid_input = parts[1] if len(parts) > 1 else None
                 if not gid_input:
                     print("  Usage: kill <game_id>")
                 else:
-                    full_gid, status = await _check_game(nc, gid_input, password)
+                    full_gid, status = await _check_game(nc, gid_input, password, admin_id)
                     if status == "ambiguous":
                         print(f"  Ambiguous ID '{gid_input}' — be more specific.")
                     elif full_gid is None:
                         print(f"  Game '{gid_input}' not found.")
                     else:
                         payload = {"game_id": full_gid}
-                        msg = await nc.request(SUBJECT_ADMIN_KILL, _signed(payload, password), timeout=REQUEST_TIMEOUT)
+                        msg = await nc.request(SUBJECT_ADMIN_KILL, _signed(payload, password, admin_id), timeout=REQUEST_TIMEOUT)
                         data = decode_msg(msg.data)
                         if data.get("ok"):
                             print(f"  Killed game {full_gid}")

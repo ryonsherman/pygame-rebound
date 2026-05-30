@@ -278,11 +278,13 @@ class GameServer:
         await msg.respond(encode_msg({"ok": True, "games": games}))
 
     async def _on_admin_stop(self, msg):
-        if self._check_auth(msg) is None:
+        data = self._check_auth(msg)
+        if data is None:
             await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
             return
+        admin_id = data.get("admin_id", "unknown")
         await msg.respond(encode_msg({"ok": True, "message": "Server shutting down"}))
-        print("[SERVER] Admin requested shutdown")
+        print(f"[SERVER] Admin {admin_id} requested shutdown")
         await self.nc.drain()
         asyncio.get_event_loop().stop()
 
@@ -293,6 +295,7 @@ class GameServer:
             return
         try:
             game_id = data.get("game_id")
+            admin_id = data.get("admin_id", "unknown")
             slot = data.get("slot")
             room = self.rooms.get(game_id)
             if not room:
@@ -305,7 +308,7 @@ class GameServer:
             # Notify the kicked player
             await self.nc.publish(sub_game(game_id, "kicked", str(slot)), b"")
             await msg.respond(encode_msg({"ok": True, "game_id": game_id, "slot": slot}))
-            print(f"[ROOM {game_id}] Admin kicked slot {slot}")
+            print(f"[ROOM {game_id}] Admin {admin_id} kicked slot {slot}")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
@@ -316,6 +319,7 @@ class GameServer:
             return
         try:
             game_id = data.get("game_id")
+            admin_id = data.get("admin_id", "unknown")
             room = self.rooms.get(game_id)
             if not room:
                 await msg.respond(encode_msg({"ok": False, "error": "Game not found"}))
@@ -325,10 +329,10 @@ class GameServer:
                 kick_slot = max(room.players.keys())
                 room.handle_leave(kick_slot)
                 await self.nc.publish(sub_game(game_id, "kicked", str(kick_slot)), b"")
-                print(f"[ROOM {game_id}] Replaced slot {kick_slot} for admin join")
+                print(f"[ROOM {game_id}] Replaced slot {kick_slot} for admin {admin_id} join")
             slot = room.assign_slot()
             await msg.respond(encode_msg({"ok": True, "game_id": game_id, "slot": slot}))
-            print(f"[ROOM {game_id}] Admin joined as slot {slot}")
+            print(f"[ROOM {game_id}] Admin {admin_id} joined as slot {slot}")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
@@ -339,6 +343,7 @@ class GameServer:
             return
         try:
             game_id = data.get("game_id")
+            admin_id = data.get("admin_id", "unknown")
             room = self.rooms.get(game_id)
             if not room:
                 await msg.respond(encode_msg({"ok": False, "error": "Game not found"}))
@@ -350,7 +355,7 @@ class GameServer:
             # Remove the room
             del self.rooms[game_id]
             await msg.respond(encode_msg({"ok": True, "game_id": game_id}))
-            print(f"[ROOM {game_id}] Killed by admin")
+            print(f"[ROOM {game_id}] Killed by admin {admin_id}")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
@@ -362,6 +367,7 @@ class GameServer:
             return
         try:
             difficulty = data.get("difficulty", "medium")
+            admin_id = data.get("admin_id", "unknown")
             if difficulty not in ("easy", "medium", "hard"):
                 difficulty = "medium"
             
@@ -375,7 +381,7 @@ class GameServer:
             
             self.rooms[gid] = room
             await msg.respond(encode_msg({"ok": True, "game_id": gid}))
-            print(f"[ROOM {gid}] Created with 4 server-side AI bots ({difficulty})")
+            print(f"[ROOM {gid}] Created by admin {admin_id} with 4 server-side AI bots ({difficulty})")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
