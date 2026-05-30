@@ -159,7 +159,7 @@ class App:
         self.waiting_deadline = None
         self.waiting_players = 1
         self.difficulty = "medium"  # Default for online mode
-        self.show_aim_lines = True  # For spectate mode
+        self.show_aim_lines = False  # For spectate mode, off by default
 
     def run(self):
         while True:

@@ -20,7 +20,7 @@ class Game:
         self.engine = GameEngine(difficulty=difficulty, human_players=human_players)
         self.prev_mouse_down = False
         self.muted = True
-        self.show_aim_lines = spectate  # On by default in spectate mode
+        self.show_aim_lines = False  # Off by default in spectate mode
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
