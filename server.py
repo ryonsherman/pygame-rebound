@@ -107,7 +107,7 @@ class GameRoom:
                 state = self.engine.get_state()
                 for c in state["castles"]:
                     c["human"] = c["owner"] in self.real_players
-                await self.nc.publish(sub_game(self.game_id, "state"), encode_state(state).encode())
+                await self.nc.publish(sub_game(self.game_id, "state"), encode_state(state))
 
                 if self.engine.game_over:
                     self.status = "finished"
@@ -201,6 +201,9 @@ class GameServer:
         try:
             data = decode_msg(msg.data)
             difficulty = data.get("difficulty", "medium")
+            # Validate difficulty to prevent mismatched rooms
+            if difficulty not in ("easy", "medium", "hard"):
+                difficulty = "medium"
             is_bot = data.get("bot", False)
             admin_bot = data.get("admin_bot", False)
             self.pending_matches.append((msg, difficulty, is_bot, admin_bot))
@@ -214,12 +217,18 @@ class GameServer:
     async def _on_input(self, msg):
         try:
             parts = msg.subject.split(".")
+            if len(parts) < 5:
+                return
             game_id = parts[2]
             slot = int(parts[4])
+            if not (0 <= slot <= 3):
+                return
             room = self.rooms.get(game_id)
             if room and slot in room.players:
                 data = decode_msg(msg.data)
                 room.handle_input(slot, data)
+        except (ValueError, IndexError):
+            pass
         except Exception:
             pass
 

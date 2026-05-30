@@ -2,7 +2,7 @@
 Admin shell for the Rebound game server.
 Connects to NATS and provides interactive management commands.
 
-Usage: python manage.py
+Usage: python admin.py [password]
 """
 import asyncio
 import json
@@ -377,6 +377,10 @@ async def main():
                     else:
                         await cmd_kick(nc, gid, parts[2], password)
             elif cmd == "bots":
+                # Reset last_game_id if previous bot tasks have all completed
+                if last_game_id and bot_tasks and all(t.done() for t in bot_tasks):
+                    last_game_id = None
+                    bot_tasks.clear()
                 if last_game_id:
                     print(f"  Bot game already running: {last_game_id}")
                 else:

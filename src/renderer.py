@@ -138,6 +138,13 @@ def draw_projectile(screen, p):
 
 WINNER_NAMES = ["Red", "Blue", "Green", "Yellow"]
 
+# Cached font helper to avoid repeated SysFont allocation
+_font_cache = {}
+def _get_font(size):
+    if size not in _font_cache:
+        _font_cache[size] = pygame.font.SysFont(None, size)
+    return _font_cache[size]
+
 def draw_stats(screen, castles):
     ax, ay, aw, ah = ARENA_RECT
     font = pygame.font.SysFont(None, 20)
@@ -156,7 +163,7 @@ def draw_stats(screen, castles):
 
 def draw_game_over(screen, state):
     w = state["winner"]
-    font = pygame.font.SysFont(None, 60)
+    font = _get_font(60)
     color = CASTLE_COLORS[w] if w is not None else (200, 200, 200)
     text = font.render(f"{WINNER_NAMES[w]} Wins!", True, color)
     ax, ay, aw, ah = ARENA_RECT

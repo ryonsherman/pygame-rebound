@@ -106,13 +106,16 @@ class NATSClient:
             )
 
     def close(self):
-        # Can't truly stop the loop from here, but drain the connection
         if self._nc and self._loop:
             future = asyncio.run_coroutine_threadsafe(self._nc.drain(), self._loop)
             try:
                 future.result(timeout=3)
             except Exception:
-                pass
+                # Drain failed — force close the connection
+                try:
+                    asyncio.run_coroutine_threadsafe(self._nc.close(), self._loop).result(timeout=2)
+                except Exception:
+                    pass
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(timeout=3)
 
@@ -320,9 +323,10 @@ class App:
                     play_sound_events(self.latest_state)
                 draw_game(self.screen, self.latest_state, my_slot=self.nats.slot)
                 if self.latest_state.get("game_over"):
+                    remaining = max(0, 30 - self.game_over_timer // FPS)
                     font = pygame.font.SysFont(None, 24)
-                    hint = font.render("Press Q to return to menu", True, (120, 120, 140))
-                    self.screen.blit(hint, (WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT - 30))
+                    hint = font.render(f"Returning to menu in {remaining}s — Press Q to return now", True, (120, 120, 140))
+                    self.screen.blit(hint, (WINDOW_WIDTH // 2 - 160, WINDOW_HEIGHT - 30))
             else:
                 self.screen.fill(BG_COLOR)
             if self.muted:

@@ -29,6 +29,10 @@ def _clamp_aim(owner, mx, my, cx, cy):
     return mx, my
 
 def _corner_positions():
+    """Return castle positions by owner index.
+    Owner 0 (Red): bottom-right, Owner 1 (Blue): top-left,
+    Owner 2 (Green): top-right, Owner 3 (Yellow): bottom-left.
+    """
     ax, ay, aw, ah = ARENA_RECT
     m = 4
     return [
@@ -45,7 +49,8 @@ def _init_bricks(cx, cy):
     total_h = rows * BRICK_SIZE
     ox = cx + (CASTLE_SIZE - total_w) // 2
     oy = cy + (CASTLE_SIZE - total_h) // 2
-    # counter-clockwise from top-right, center last
+    # Spiral order from outer edges inward — outer bricks are destroyed first,
+    # center brick (1,1) is the last to fall, making it harder to fully destroy a castle.
     order = [(0, 2), (1, 2), (2, 2), (2, 1), (2, 0), (1, 0), (0, 0), (0, 1), (1, 1)]
     bricks = []
     for r, c in order:
@@ -54,11 +59,7 @@ def _init_bricks(cx, cy):
         bricks.append({"alive": True, "hp": 2, "rect": (bx, by, BRICK_SIZE, BRICK_SIZE)})
     return bricks
 
-_ball_id_counter = 0
-
-def _make_projectile(x, y, angle, owner, color_idx, speed):
-    global _ball_id_counter
-    _ball_id_counter += 1
+def _make_projectile(x, y, angle, owner, color_idx, speed, ball_id=0):
     return {
         "x": x, "y": y,
         "vx": math.cos(angle) * speed,
@@ -70,7 +71,7 @@ def _make_projectile(x, y, angle, owner, color_idx, speed):
         "bounces": 0,
         "bounce_cooldown": 0,
         "ball_cd": 0,
-        "id": _ball_id_counter,
+        "id": ball_id,
     }
 
 def _random_blockade_pos(owner):
@@ -493,6 +494,7 @@ class GameEngine:
         self.game_over = False
         self.winner = None
         self.sound_events = []
+        self._ball_id_counter = 0
 
     def _init_castles(self):
         positions = _corner_positions()
@@ -589,10 +591,12 @@ class GameEngine:
                 s["timer"] -= 1
                 if s["timer"] <= 0:
                     s["active"] = False
+                    # Set cooldown when shield duration expires to prevent permanent shielding
+                    s["cooldown_timer"] = SHIELD_COOLDOWN
             if s["cooldown_timer"] > 0:
                 s["cooldown_timer"] -= 1
             fr = c["fire_request"]
-            if fr is not None:
+            if fr is not None and c["cannon_cooldown"] <= 0:
                 cx, cy = c["center"]
                 h = CASTLE_SIZE / 2
                 cf = math.cos(fr)
@@ -608,7 +612,8 @@ class GameEngine:
                 dist = min(tx, ty) + PROJECTILE_RADIUS + 1
                 px = cx + math.cos(fr) * dist
                 py = cy + math.sin(fr) * dist
-                projectile = _make_projectile(px, py, fr, c["owner"], c["owner"], self.projectile_speed)
+                self._ball_id_counter += 1
+                projectile = _make_projectile(px, py, fr, c["owner"], c["owner"], self.projectile_speed, self._ball_id_counter)
                 # Add cannon sling momentum (tangential velocity at tip)
                 omega = c.get("angular_vel", 0)
                 tip_speed = omega * dist
@@ -620,9 +625,12 @@ class GameEngine:
                 c["fire_request"] = None
                 self._emit_sound("cannon_fire", 1.0, c["owner"])
                 if DEBUG:
-                    if DEBUG: print(f"[FIRE] id:{projectile['id']} owner:{_tag(c["owner"], self.human_players)} "
+                    print(f"[FIRE] id:{projectile['id']} owner:{_tag(c["owner"], self.human_players)} "
                           f"pos:({px:.1f},{py:.1f}) angle:{math.degrees(fr):.0f} "
                           f"v:({projectile['vx']:.1f},{projectile['vy']:.1f})")
+            elif fr is not None:
+                # Clear fire request when cooldown prevents firing
+                c["fire_request"] = None
 
         for ai in self.ai:
             if ai.owner not in self.human_players:
@@ -692,7 +700,7 @@ class GameEngine:
         while len(self.projectiles) > self.max_projectiles:
             removed = self.projectiles.pop(0)
             if DEBUG:
-                if DEBUG: print(f"[CULL] id:{removed['id']} owner:{_tag(removed["owner"], self.human_players)} "
+                print(f"[CULL] id:{removed['id']} owner:{_tag(removed["owner"], self.human_players)} "
                       f"pos:({removed['x']:.1f},{removed['y']:.1f}) "
                       f"b:{removed['bounces']} r:{removed['radius']}")
 
@@ -817,14 +825,14 @@ class GameEngine:
         if bounced:
             p["bounces"] += 1
             if DEBUG:
-                if DEBUG: print(f"  [WALL] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
+                print(f"  [WALL] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
                       f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
                       f"r:{p['radius']} b:{p['bounces']} "
                       f"owner:{COLOR_LETTERS[p['owner']]}")
             if p["bounces"] >= self.max_bounces:
                 p["alive"] = False
                 if DEBUG:
-                    if DEBUG: print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{_tag(p["owner"], self.human_players)}")
+                    print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{_tag(p["owner"], self.human_players)}")
             elif p["bounce_cooldown"] <= 0:
                 p["radius"] = max(2, int(p["radius"] * self.bounce_shrink))
                 p["vx"] *= self.bounce_slowdown
@@ -842,7 +850,7 @@ class GameEngine:
         if p["bounces"] >= self.max_bounces:
             p["alive"] = False
             if DEBUG:
-                if DEBUG: print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{_tag(p["owner"], self.human_players)}")
+                print(f"[DEATH] id:{p['id']} cause:shield_reflect_bounce owner:{_tag(p["owner"], self.human_players)}")
         elif p["bounce_cooldown"] <= 0:
             p["radius"] = max(2, int(p["radius"] * 0.8))
             p["vx"] *= 0.88
@@ -932,7 +940,7 @@ class GameEngine:
                     p["vy"] = abs(p["vy"]) if dy > 0 else -abs(p["vy"])
                 if DEBUG:
                     dstr = f"dx={dx:+.1f} dy={dy:+.1f}" if dx != 0 or dy != 0 else "dx=0 dy=0"
-                    if DEBUG: print(f"  [BLK] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
+                    print(f"  [BLK] id:{p['id']} {p['x']:.1f},{p['y']:.1f} "
                           f"spd:{math.hypot(p['vx'],p['vy']):.1f} dir:({p['vx']:.1f},{p['vy']:.1f}) "
                           f"{dstr} r:{p['radius']} b:{p['bounces']} "
                           f"keys:{len(hit_blockade_keys)} "
@@ -1006,10 +1014,10 @@ class GameEngine:
                 "bricks": [dict(b) for b in c["bricks"]],
                 "blockades": [{
                     "alive": b["alive"],
-                    "bricks": [dict(br) for br in b["bricks"]],
-                } for b in c["blockades"]],
+                    "bricks": [dict(br) for br in b["bricks"] if br["alive"]],
+                } for b in c["blockades"] if b["alive"]],
                 "stats": dict(c["stats"]),
-                "human": c["owner"] in self.human_players or c["owner"] == 0,
+                "human": c["owner"] in self.human_players,
             } for c in self.castles],
             "projectiles": [{
                 "x": p["x"], "y": p["y"],

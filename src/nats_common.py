@@ -55,6 +55,6 @@ def verify_auth(data, password):
     return hmac.compare_digest(token, expected)
 
 
-# Legacy aliases used by state broadcasting
-encode_state = lambda state: base64.b64encode(json.dumps(state).encode()).decode()
+# State encoding returns bytes (consistent with encode_msg)
+encode_state = lambda state: base64.b64encode(json.dumps(state).encode())
 decode_state = decode_msg

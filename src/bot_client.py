@@ -74,47 +74,50 @@ class BotClient:
         self._running = True
         interval = 1.0 / tick_hz
 
-        while self._running:
-            if self.state and not self.state.get("game_over", False):
-                castles = self.state.get("castles", [])
-                projectiles = self.state.get("projectiles", [])
+        try:
+            while self._running:
+                if self.state and not self.state.get("game_over", False):
+                    castles = self.state.get("castles", [])
+                    projectiles = self.state.get("projectiles", [])
 
-                if self.slot < len(castles) and castles[self.slot].get("alive"):
-                    # Patch: give castle a fire_request field for AI to write to
-                    my_castle = castles[self.slot]
-                    my_castle["fire_request"] = None
+                    if self.slot < len(castles) and castles[self.slot].get("alive"):
+                        # Patch: give castle a fire_request field for AI to write to
+                        my_castle = castles[self.slot]
+                        my_castle["fire_request"] = None
 
-                    # Update AI targeting and rotation
-                    self.ai.update(castles, projectiles)
+                        # Update AI targeting and rotation
+                        self.ai.update(castles, projectiles)
 
-                    # Read what the AI decided
-                    cx, cy = my_castle["center"]
-                    angle = self.ai.current_angle
-                    aim_x = cx + math.cos(angle) * 300
-                    aim_y = cy + math.sin(angle) * 300
+                        # Read what the AI decided
+                        cx, cy = my_castle["center"]
+                        angle = self.ai.current_angle
+                        aim_x = cx + math.cos(angle) * 300
+                        aim_y = cy + math.sin(angle) * 300
 
-                    fire = my_castle.get("fire_request") is not None
-                    use_shield = self.ai.shield_hold > 0
+                        fire = my_castle.get("fire_request") is not None
+                        use_shield = self.ai.shield_hold > 0
 
-                    inp = {
-                        "mouse_x": int(aim_x),
-                        "mouse_y": int(aim_y),
-                        "click": fire,
-                        "space": use_shield,
-                    }
+                        inp = {
+                            "mouse_x": int(aim_x),
+                            "mouse_y": int(aim_y),
+                            "click": fire,
+                            "space": use_shield,
+                        }
 
-                    subj = sub_game(self.game_id, "input", str(self.slot))
-                    await self.nc.publish(subj, encode_msg(inp))
+                        subj = sub_game(self.game_id, "input", str(self.slot))
+                        await self.nc.publish(subj, encode_msg(inp))
 
-            elif self.state and self.state.get("game_over", False):
-                self._running = False
-                break
+                elif self.state and self.state.get("game_over", False):
+                    self._running = False
+                    break
 
-            await asyncio.sleep(interval)
-
-        print(f"[{self.name}] Stopped, disconnecting")
-        if self.nc.is_connected:
-            await self.nc.drain()
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            print(f"[{self.name}] Stopped, disconnecting")
+            if self.nc.is_connected:
+                await self.nc.drain()
 
     def stop(self):
         self._running = False

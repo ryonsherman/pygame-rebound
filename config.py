@@ -1,4 +1,46 @@
-from pygame import Color
+# Lazy-load pygame.Color to avoid triggering pygame init on headless imports
+# (server, tests, bot clients don't need pygame display initialization)
+
+def _lazy_color(*args):
+    """Create a real pygame.Color, importing pygame on first call."""
+    from pygame import Color as _Color
+    return _Color(*args)
+
+
+class _ColorProxy:
+    """Proxy that defers pygame.Color() creation until first attribute access."""
+    def __init__(self, *args):
+        self._args = args
+        self._color = None
+
+    def _resolve(self):
+        if self._color is None:
+            self._color = _lazy_color(*self._args)
+        return self._color
+
+    def __iter__(self):
+        return iter(self._resolve())
+
+    def __getitem__(self, idx):
+        return self._resolve()[idx]
+
+    def __len__(self):
+        return len(self._resolve())
+
+    def __repr__(self):
+        return repr(self._resolve())
+
+    def __eq__(self, other):
+        return self._resolve() == other
+
+    def __hash__(self):
+        return hash(self._resolve())
+
+
+def Color(*args):
+    """Create a lazy Color proxy that only imports pygame on first use."""
+    return _ColorProxy(*args)
+
 
 # --- Window ---
 WINDOW_WIDTH = 1024       # Game window width in pixels
