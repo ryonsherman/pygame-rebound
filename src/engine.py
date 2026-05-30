@@ -142,18 +142,17 @@ def _init_obstacles():
         obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
-    # X shape (diagonal cross) - extended by 1 brick on each end
+    # + shape (vertical and horizontal cross) - extended by 1 brick on each end
     # Store as base positions relative to center for rotation
     center_bases = []
+    # Vertical bar
     for i in range(-4, 5):
-        dx = i * bs
-        dy = i * bs
-        center_bases.append({"offset": (dx, dy), "rect": (cx + dx - bs // 2, cy + dy - bs // 2, bs, bs), "zone": "center"})
-        dx = i * bs
-        dy = -i * bs
-        center_bases.append({"offset": (dx, dy), "rect": (cx + dx - bs // 2, cy + dy - bs // 2, bs, bs), "zone": "center"})
+        center_bases.append({"offset": (0, i * bs), "zone": "center"})
+    # Horizontal bar
+    for i in range(-4, 5):
+        center_bases.append({"offset": (i * bs, 0), "zone": "center"})
 
-    # Remove duplicate center block (added twice in loop above)
+    # Remove duplicate center block
     seen = set()
     unique_bases = []
     for o in center_bases:
