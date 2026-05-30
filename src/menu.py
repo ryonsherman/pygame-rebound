@@ -1,6 +1,7 @@
 import pygame
 from config import WINDOW_WIDTH, WINDOW_HEIGHT, BG_COLOR
-from src.renderer import _get_font
+from src.engine import GameEngine
+from src.renderer import draw_game_direct, _get_font
 
 class Menu:
     def __init__(self):
@@ -13,6 +14,9 @@ class Menu:
         # Navigation: row 0 = easy/medium/hard, row 1 = online
         self._row = 0  # 0 = difficulty, 1 = online
         self._col = 1  # index within difficulty row (0=easy,1=medium,2=hard)
+        
+        # Background game engine for menu animation
+        self.bg_engine = GameEngine(difficulty="medium", human_players=[], endless_mode=True)
 
     def _sync_mode(self):
         if self._row == 0:
@@ -66,8 +70,15 @@ class Menu:
                     self._sync_mode()
         return None
 
+    def update(self, dt):
+        """Update the background game engine."""
+        self.bg_engine.update()
+
     def draw(self, screen):
-        screen.fill(BG_COLOR)
+        # Draw background game (no aim lines)
+        draw_game_direct(screen, self.bg_engine, my_slot=None, aim_mode="spectate_no_lines")
+        
+        # Draw menu UI overlay
         title_font = _get_font(80)
         font = _get_font(44)
         small = _get_font(28)

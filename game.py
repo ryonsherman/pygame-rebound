@@ -241,6 +241,10 @@ class App:
                 self.nats = None
 
     def _update(self, dt):
+        if self.state == "menu":
+            if self.menu:
+                self.menu.update(dt)
+        
         if self.state == "waiting":
             if self.nats and not self.nats.is_connected:
                 self._disconnect_to_menu("Server disconnected")

@@ -474,7 +474,7 @@ class AIController:
         castle["fire_request"] = self.current_angle
 
 class GameEngine:
-    def __init__(self, difficulty="hard", human_players=None):
+    def __init__(self, difficulty="hard", human_players=None, admin_owner=None, endless_mode=False):
         self.difficulty = difficulty
         speed_mult = {"easy": 0.9, "medium": 1.0, "hard": 1.1}.get(difficulty, 1.0)
         self.projectile_speed = PROJECTILE_SPEED * speed_mult
@@ -483,6 +483,8 @@ class GameEngine:
         self.bounce_shrink = {"easy": 0.75, "medium": 0.8, "hard": 0.85}.get(difficulty, 0.8)
         self.bounce_slowdown = {"easy": 0.84, "medium": 0.88, "hard": 0.92}.get(difficulty, 0.88)
         self.projectiles = []
+        self.admin_owner = admin_owner  # Admin's slot — their castle never stays dead
+        self.endless_mode = endless_mode  # If True, castles respawn instead of dying (menu background)
         self.castles = self._init_castles()
         if human_players is None:
             human_players = [0]
@@ -497,6 +499,21 @@ class GameEngine:
         self.winner = None
         self.sound_events = []
         self._ball_id_counter = 0
+
+    def respawn_castle(self, owner):
+        """Instantly respawn a castle with full health — used for menu background mode."""
+        positions = _corner_positions()
+        cx, cy = positions[owner]
+        castle = self.castles[owner]
+        castle["alive"] = True
+        castle["bricks"] = _init_bricks(cx, cy)
+        castle["stats"] = {"hits": 0, "blocks": 0}
+        castle["blockades"] = []
+        castle["shield"] = {"active": False, "timer": 0, "cooldown_timer": 0}
+        # Clear any projectiles targeting this castle
+        for p in self.projectiles:
+            if p["alive"]:
+                p["owner"] = owner  # Reassign to prevent self-damage loop
 
     def _init_castles(self):
         positions = _corner_positions()
@@ -989,18 +1006,22 @@ class GameEngine:
                 self._emit_sound(event, _sound_vol(projectile), attacker)
                 if remaining == 0:
                     self._emit_sound("castle_collapse", 1.0)
-                    castle["alive"] = False
-                    removed_ids = [p["id"] for p in self.projectiles if p["owner"] == castle["owner"]]
-                    self.projectiles = [p for p in self.projectiles if p["owner"] != castle["owner"]]
-                    if DEBUG and removed_ids:
-                        print(f"[DEATH] ids:{removed_ids} cause:castle_collapse owner:{COLOR_LETTERS[castle['owner']]}")
-                    if DEBUG: print(f"{_tag(castle["owner"], self.human_players)} → OUT")
-                    alive = [c for c in self.castles if c["alive"]]
-                    if len(alive) == 1:
-                        self.game_over = True
-                        self.winner = alive[0]["owner"]
-                        self._emit_sound("victory", 1.0)
-                        if DEBUG: print(f"{_tag(self.winner, self.human_players)} → VICTORY!")
+                    # Check if castle should respawn (endless mode or admin)
+                    if self.endless_mode or (self.admin_owner is not None and castle["owner"] == self.admin_owner):
+                        self.respawn_castle(castle["owner"])
+                    else:
+                        castle["alive"] = False
+                        removed_ids = [p["id"] for p in self.projectiles if p["owner"] == castle["owner"]]
+                        self.projectiles = [p for p in self.projectiles if p["owner"] != castle["owner"]]
+                        if DEBUG and removed_ids:
+                            print(f"[DEATH] ids:{removed_ids} cause:castle_collapse owner:{COLOR_LETTERS[castle['owner']]}")
+                        if DEBUG: print(f"{_tag(castle["owner"], self.human_players)} → OUT")
+                        alive = [c for c in self.castles if c["alive"]]
+                        if len(alive) == 1:
+                            self.game_over = True
+                            self.winner = alive[0]["owner"]
+                            self._emit_sound("victory", 1.0)
+                            if DEBUG: print(f"{_tag(self.winner, self.human_players)} → VICTORY!")
                 return
 
     def get_state(self):
