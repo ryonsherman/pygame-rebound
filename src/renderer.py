@@ -28,14 +28,7 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
         for blockade in c.get("blockades", []):
             draw_blockade(screen, blockade, c["owner"])
     draw_stats(screen, state["castles"])
-    for p in state["projectiles"]:
-        if p["alive"]:
-            draw_projectile(screen, p)
-    if state.get("game_over"):
-        draw_game_over(screen, state)
     
-    # Draw aim lines based on mode
-    obstacles = state.get("obstacles", [])
     # Collect all blockades as obstacles for ray casting
     all_blockades = []
     for c in state["castles"]:
@@ -44,8 +37,9 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
                 for brick in blockade.get("bricks", []):
                     if brick.get("alive"):
                         all_blockades.append({"rect": brick["rect"]})
-    hit_objects = obstacles + all_blockades
+    hit_objects = state.get("obstacles", []) + all_blockades
     
+    # Draw aim lines (behind projectiles)
     if aim_mode == "spectate":
         # Show all lines (medium style, no clamp)
         for c in state["castles"]:
@@ -64,6 +58,14 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
                 if c["alive"]:
                     style = "easy" if c["owner"] == my_slot else "medium"
                     draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False)
+    
+    # Draw projectiles on top of aim lines
+    for p in state["projectiles"]:
+        if p["alive"]:
+            draw_projectile(screen, p)
+    
+    if state.get("game_over"):
+        draw_game_over(screen, state)
 
 def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
     """Render directly from engine state without copying — used in local mode.
@@ -112,14 +114,7 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
                 continue
             draw_blockade(screen, blockade, c["owner"])
     draw_stats(screen, engine.castles)
-    for p in engine.projectiles:
-        if p["alive"]:
-            draw_projectile(screen, p)
-    if engine.game_over:
-        _draw_game_over_direct(screen, engine)
     
-    # Draw aim lines based on mode
-    obstacles = engine.obstacles
     # Collect all blockades as obstacles for ray casting
     all_blockades = []
     for c in engine.castles:
@@ -128,8 +123,9 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
                 for brick in blockade.get("bricks", []):
                     if brick.get("alive"):
                         all_blockades.append({"rect": brick["rect"]})
-    hit_objects = obstacles + all_blockades
+    hit_objects = engine.obstacles + all_blockades
     
+    # Draw aim lines (behind projectiles)
     if aim_mode == "spectate":
         # Show all lines (medium style, no clamp)
         for c in engine.castles:
@@ -156,6 +152,14 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
                 if c["owner"] == my_slot and c["owner"] in engine.human_players:
                     clamp = (engine.difficulty == "medium")
                     draw_aim_line(screen, c, engine.difficulty, hit_objects, clamp_to_quadrant=clamp)
+    
+    # Draw projectiles on top of aim lines
+    for p in engine.projectiles:
+        if p["alive"]:
+            draw_projectile(screen, p)
+    
+    if engine.game_over:
+        _draw_game_over_direct(screen, engine)
 
 def _draw_game_over_direct(screen, engine):
     w = engine.winner
