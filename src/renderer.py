@@ -435,11 +435,11 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
         print(f"       cannon_angle={angle:.3f}, start=({sx:.1f}, {sy:.1f}), end=({ex:.1f}, {ey:.1f})")
     
     if style == "easy":
-        # Solid bright line
-        color = (255, 255, 100)  # Bright yellow
+        # Bright yellow - easy to see
+        color = (255, 255, 100)
     else:  # medium
-        # Fainter line
-        color = (200, 200, 80)
+        # Dimmer yellow - harder to see
+        color = (150, 150, 60)
     
     # Draw line directly on screen
     pygame.draw.line(screen, color, (int(sx), int(sy)), (int(ex), int(ey)), 2)
