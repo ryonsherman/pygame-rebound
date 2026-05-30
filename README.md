@@ -149,6 +149,16 @@ Commands:
 - `make server` — Start the game server (connects to NATS)
 - `NATS_URL` in `config.py` controls the NATS connection address
 
+#### Server Authority
+
+The server is the sole host of truth. Clients are input-only interfaces — they send aim coordinates, fire, and shield inputs. All game logic (physics, collision, damage, cooldowns, win conditions) runs server-side. Clients cannot:
+
+- Move projectiles, teleport, or modify positions
+- Deal extra damage or skip cooldowns
+- Modify castle health or kill other players directly
+
+The only input a client controls is where to aim and when to fire/shield. Even then, cannon rotation speed is enforced server-side, preventing snap-aiming.
+
 ### Rendering
 
 `src/renderer.py` takes the engine's state dict and draws the current frame using `pygame.draw` primitives. Cannons have a flat tip (muzzle) and a rounded grey base.
