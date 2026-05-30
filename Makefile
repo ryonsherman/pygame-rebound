@@ -7,4 +7,4 @@ server:
 	python server.py
 
 nats:
-	nats-server -a 127.0.0.1
+	nats-server -a 127.0.0.1 -V
