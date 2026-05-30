@@ -4,15 +4,13 @@ import uuid
 import time
 import nats
 from src.nats_common import (
-    NATS_SERVER, CONNECT_TIMEOUT, SUBJECT_MATCH,
-    PREFIX, sub_game, encode_state, decode_state,
+    NATS_SERVER, SUBJECT_MATCH,
+    sub_game, encode_state, decode_state,
 )
-from config import NATS_NAME, LOBBY_COUNTDOWN
+from config import NATS_NAME, NATS_PREFIX, LOBBY_COUNTDOWN, STATE_HZ, STATUS_HZ, CONNECT_TIMEOUT
 from src.engine import GameEngine
 
 COUNTDOWN_SECONDS = LOBBY_COUNTDOWN
-STATE_HZ = 20
-STATUS_HZ = 2
 
 
 class GameRoom:
@@ -106,8 +104,8 @@ class GameServer:
         print(f"[SERVER] Connected — {self.nc.connected_url}")
 
         self._match_sub = await self.nc.subscribe(SUBJECT_MATCH, cb=self._on_match)
-        await self.nc.subscribe(f"{PREFIX}.game.*.input.>", cb=self._on_input)
-        await self.nc.subscribe(f"{PREFIX}.game.*.leave", cb=self._on_leave)
+        await self.nc.subscribe(f"{NATS_PREFIX}.game.*.input.>", cb=self._on_input)
+        await self.nc.subscribe(f"{NATS_PREFIX}.game.*.leave", cb=self._on_leave)
         print("[SERVER] Matchmaking active — waiting for players...")
 
         while True:
