@@ -15,9 +15,9 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
     """Render game state.
     
     aim_mode controls aim line visibility:
-    - 'spectate': show all players' lines (medium style, no clamp, no fade)
-    - 'multiplayer': show only own line (medium style, clamped, no fade)
-    - 'admin': show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+    - 'spectate': show all players' lines (medium style, no clamp)
+    - 'multiplayer': show only own line (medium style, clamped)
+    - 'admin': show own line (easy) + others (medium, no clamp)
     """
     screen.fill(BG_COLOR)
     draw_arena(screen, state)
@@ -47,33 +47,33 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
     hit_objects = obstacles + all_blockades
     
     if aim_mode == "spectate":
-        # Show all lines (medium style, no clamp, no fade)
+        # Show all lines (medium style, no clamp)
         for c in state["castles"]:
             if c["alive"]:
-                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False, fade=False)
+                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False)
     elif aim_mode == "multiplayer":
-        # Show only own line (medium style, clamped, no fade)
+        # Show only own line (medium style, clamped)
         if my_slot is not None:
             for c in state["castles"]:
                 if c["owner"] == my_slot and c.get("human"):
-                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True, fade=False)
+                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True)
     elif aim_mode == "admin":
-        # Show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+        # Show own line (easy) + others (medium, no clamp)
         if my_slot is not None:
             for c in state["castles"]:
                 if c["alive"]:
                     style = "easy" if c["owner"] == my_slot else "medium"
-                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False, fade=False)
+                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False)
 
 def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
     """Render directly from engine state without copying — used in local mode.
     
     aim_mode controls aim line visibility:
-    - 'spectate': show all players' lines (medium style, no clamp, no fade)
-    - 'multiplayer': show only own line (medium style, clamped, no fade)
-    - 'admin': show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+    - 'spectate': show all players' lines (medium style, no clamp)
+    - 'multiplayer': show only own line (medium style, clamped)
+    - 'admin': show own line (easy) + others (medium, no clamp)
     - 'single_player': show only human player line based on engine.difficulty
-                       (easy=no clamp + fade, medium=clamped, hard=none)
+                       (easy=no clamp, medium=clamped, hard=none)
     """
     screen.fill(BG_COLOR)
     # Draw arena with obstacles read directly
@@ -131,32 +131,31 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
     hit_objects = obstacles + all_blockades
     
     if aim_mode == "spectate":
-        # Show all lines (medium style, no clamp, no fade)
+        # Show all lines (medium style, no clamp)
         for c in engine.castles:
             if c["alive"]:
-                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False, fade=False)
+                draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False)
     elif aim_mode == "multiplayer":
-        # Show only own line (medium style, clamped, no fade)
+        # Show only own line (medium style, clamped)
         if my_slot is not None:
             for c in engine.castles:
                 if c["owner"] == my_slot and c["owner"] in engine.human_players:
-                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True, fade=False)
+                    draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=True)
     elif aim_mode == "admin":
-        # Show own line (easy, no clamp, no fade) + others (medium, no clamp, no fade)
+        # Show own line (easy) + others (medium, no clamp)
         if my_slot is not None:
             for c in engine.castles:
                 if c["alive"]:
                     style = "easy" if c["owner"] == my_slot else "medium"
-                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False, fade=False)
+                    draw_aim_line(screen, c, style, hit_objects, clamp_to_quadrant=False)
     elif aim_mode == "single_player":
         # Show human player line based on difficulty
-        # easy: no clamp, fade; medium: clamped, no fade; hard: none
+        # easy: no clamp; medium: clamped; hard: none
         if my_slot is not None:
             for c in engine.castles:
                 if c["owner"] == my_slot and c["owner"] in engine.human_players:
                     clamp = (engine.difficulty == "medium")
-                    fade = (engine.difficulty == "easy")
-                    draw_aim_line(screen, c, engine.difficulty, hit_objects, clamp_to_quadrant=clamp, fade=fade)
+                    draw_aim_line(screen, c, engine.difficulty, hit_objects, clamp_to_quadrant=clamp)
 
 def _draw_game_over_direct(screen, engine):
     w = engine.winner
@@ -412,10 +411,10 @@ def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
 def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fade=False):
     """Draw aim line from cannon tip showing where projectile will hit.
     
-    style: 'easy' (solid bright), 'medium' (faint 50% alpha), 'hard' (none)
+    style: 'easy' (solid), 'medium' (faint), 'hard' (none)
     obstacles: list of obstacle rects to check for collisions
     clamp_to_quadrant: if True, line stops at quadrant boundary
-    fade: if True, line fades out along its length (used for easy mode unclamped)
+    fade: unused for now (easy and medium both use solid lines)
     """
     if style == "hard":
         return
@@ -433,33 +432,18 @@ def draw_aim_line(screen, castle, style, obstacles, clamp_to_quadrant=False, fad
     ex, ey = _ray_cast_to_boundary(sx, sy, angle, owner, obstacles, clamp_to_quadrant)
     
     if DEBUG:
-        print(f"[AIM] P{owner}: style={style}, clamp={clamp_to_quadrant}, fade={fade}")
+        print(f"[AIM] P{owner}: style={style}, clamp={clamp_to_quadrant}")
         print(f"       cannon_angle={angle:.3f}, start=({sx:.1f}, {sy:.1f}), end=({ex:.1f}, {ey:.1f})")
-        print(f"       obstacles={len(obstacles)}")
     
     if style == "easy":
-        # Full brightness, solid line
+        # Solid bright line
         color = (255, 255, 100)  # Bright yellow
     else:  # medium
-        # Fainter, semi-transparent
+        # Fainter line
         color = (200, 200, 80)
     
-    if fade:
-        # Draw multiple segments with decreasing brightness
-        num_segments = 12
-        seg_dx = (ex - sx) / num_segments
-        seg_dy = (ey - sy) / num_segments
-        for i in range(num_segments):
-            brightness = 1.0 - i / num_segments
-            seg_color = (int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness))
-            x1 = int(sx + i * seg_dx)
-            y1 = int(sy + i * seg_dy)
-            x2 = int(sx + (i + 1) * seg_dx)
-            y2 = int(sy + (i + 1) * seg_dy)
-            pygame.draw.line(screen, seg_color, (x1, y1), (x2, y2), 2)
-    else:
-        # Draw line directly on screen
-        pygame.draw.line(screen, color, (int(sx), int(sy)), (int(ex), int(ey)), 2)
+    # Draw line directly on screen
+    pygame.draw.line(screen, color, (int(sx), int(sy)), (int(ex), int(ey)), 2)
 
 # Pre-rendered shield surfaces (created on first use)
 _shield_outline = None
