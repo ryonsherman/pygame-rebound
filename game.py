@@ -8,7 +8,7 @@ import time
 import nats
 import pygame
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR, NATS_NAME
 from src.game_client import Game
 from src.menu import Menu
 from src.renderer import draw_game
@@ -49,7 +49,7 @@ class NATSClient:
         return future.result(timeout=REQUEST_TIMEOUT + 5)
 
     async def _do_connect_and_match(self, difficulty):
-        self._nc = await nats.connect(NATS_SERVER)
+        self._nc = await nats.connect(NATS_SERVER, name=NATS_NAME)
         msg = await self._nc.request(
             SUBJECT_MATCH,
             json.dumps({"difficulty": difficulty}).encode(),

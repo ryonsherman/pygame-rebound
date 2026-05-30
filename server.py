@@ -7,9 +7,10 @@ from src.nats_common import (
     NATS_SERVER, CONNECT_TIMEOUT, SUBJECT_MATCH,
     PREFIX, sub_game, encode_state, decode_state,
 )
+from config import NATS_NAME, LOBBY_COUNTDOWN
 from src.engine import GameEngine
 
-COUNTDOWN_SECONDS = 120
+COUNTDOWN_SECONDS = LOBBY_COUNTDOWN
 STATE_HZ = 20
 STATUS_HZ = 2
 
@@ -101,7 +102,7 @@ class GameServer:
 
     async def start(self):
         print("[SERVER] Connecting to NATS...")
-        self.nc = await nats.connect(NATS_SERVER, connect_timeout=CONNECT_TIMEOUT)
+        self.nc = await nats.connect(NATS_SERVER, connect_timeout=CONNECT_TIMEOUT, name=NATS_NAME)
         print(f"[SERVER] Connected — {self.nc.connected_url}")
 
         self._match_sub = await self.nc.subscribe(SUBJECT_MATCH, cb=self._on_match)

@@ -42,3 +42,5 @@ SHIELD_COLOR = Color(80, 180, 255, 100)
 # Network
 NATS_URL = "nats://127.0.0.1:4222"
 # NATS_URL = "nats://demo.nats.io:4222"
+NATS_NAME = "github.ryonsherman/rebound-game"
+LOBBY_COUNTDOWN = 120  # seconds to wait for players before starting
