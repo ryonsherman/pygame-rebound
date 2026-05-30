@@ -20,13 +20,31 @@ from src.nats_common import (
 )
 
 
+def _fix_terminal():
+    """Restore terminal settings that pygame/SDL may have broken."""
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        attrs = termios.tcgetattr(fd)
+        attrs[0] |= termios.ICRNL
+        attrs[1] |= termios.OPOST | termios.ONLCR
+        attrs[3] |= termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    except (ImportError, OSError):
+        pass
+
+
 def _raise_window():
     """Bring the pygame window to front (macOS)."""
     try:
-        from AppKit import NSApp, NSApplication
-        NSApplication.sharedApplication()
-        NSApp.activateIgnoringOtherApps_(True)
-    except ImportError:
+        import subprocess
+        pid = os.getpid()
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "System Events" to set frontmost of '
+            f'the first process whose unix id is {pid} to true'
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
         pass
 
 HELP_TEXT = """
@@ -106,7 +124,7 @@ async def cmd_kick(nc, game_id, slot, password=None):
 
 
 async def cmd_join(nc, game_id, password=None):
-    """Join a game as a human player, taking an open slot."""
+    """Join a game as a human player, replacing a bot if needed."""
     payload = {"game_id": game_id}
     msg = await nc.request(SUBJECT_ADMIN_JOIN, _signed(payload, password), timeout=REQUEST_TIMEOUT)
     data = decode_msg(msg.data)
@@ -145,6 +163,9 @@ async def cmd_join(nc, game_id, password=None):
 
     running = True
     while running:
+        if not nc.is_connected:
+            break
+
         click = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -197,13 +218,14 @@ async def cmd_join(nc, game_id, password=None):
     pygame.display.set_mode((1, 1))
     pygame.display.quit()
     pygame.quit()
+    _fix_terminal()
     print(f"  Left game {game_id}.")
 
 
 async def cmd_bots(nc, difficulty="medium"):
     from src.bot_client import BotClient
     print(f"  Spawning 4 bots ({difficulty})...")
-    bots = [BotClient(difficulty=difficulty, name=f"bot-{i}") for i in range(4)]
+    bots = [BotClient(difficulty=difficulty, name=f"bot-{i}", admin=True) for i in range(4)]
     for bot in bots:
         await bot.connect_and_match()
 
@@ -246,6 +268,9 @@ async def cmd_spectate(nc, game_id):
 
     running = True
     while running:
+        if not nc.is_connected:
+            break
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -263,13 +288,6 @@ async def cmd_spectate(nc, game_id):
             screen.blit(fps_text, (WINDOW_WIDTH - fps_text.get_width() - 10, 10))
             if muted:
                 screen.blit(pygame.font.SysFont(None, 24).render("MUTED", True, (200, 200, 200)), (10, 10))
-            if latest_state.get("game_over"):
-                font = pygame.font.SysFont(None, 48)
-                colors = ["Red", "Blue", "Green", "Yellow"]
-                winner = latest_state.get("winner")
-                if winner is not None:
-                    txt = font.render(f"{colors[winner]} Wins!", True, (255, 255, 255))
-                    screen.blit(txt, txt.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)))
         else:
             screen.fill(BG_COLOR)
             font = pygame.font.SysFont(None, 32)
@@ -284,6 +302,7 @@ async def cmd_spectate(nc, game_id):
     pygame.display.set_mode((1, 1))
     pygame.display.quit()
     pygame.quit()
+    _fix_terminal()
     print("  Spectator closed.")
 
 
@@ -314,33 +333,19 @@ async def main():
     bot_tasks = []
     last_game_id = None
 
-    loop = asyncio.get_event_loop()
-    input_queue = asyncio.Queue()
-
-    def _stdin_ready():
-        line = sys.stdin.readline()
-        input_queue.put_nowait(line)
-
-    loop.add_reader(sys.stdin.fileno(), _stdin_ready)
-
-    # Ensure terminal translates CR to NL (may be disabled by pygame/SDL init)
-    try:
-        import termios
-        fd = sys.stdin.fileno()
-        attrs = termios.tcgetattr(fd)
-        attrs[0] |= termios.ICRNL  # input: map CR to NL
-        attrs[1] |= termios.OPOST | termios.ONLCR  # output: map NL to CR-NL
-        termios.tcsetattr(fd, termios.TCSANOW, attrs)
-    except (ImportError, termios.error):
-        pass
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.patch_stdout import patch_stdout
+    session = PromptSession()
 
     try:
         while True:
-            sys.stdout.write("admin> ")
-            sys.stdout.flush()
-            line = await input_queue.get()
-            if not line:
-                break
+            with patch_stdout():
+                try:
+                    line = await session.prompt_async("admin> ")
+                except EOFError:
+                    break
+                except KeyboardInterrupt:
+                    break
             line = line.strip()
 
             parts = line.split()
@@ -414,7 +419,6 @@ async def main():
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:
-        loop.remove_reader(sys.stdin.fileno())
         for t in bot_tasks:
             t.cancel()
         if nc.is_connected:

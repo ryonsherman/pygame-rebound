@@ -8,7 +8,7 @@ import time
 import nats
 import pygame
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR, NATS_NAME
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, BG_COLOR, NATS_NAME, LOBBY_COUNTDOWN
 from src.game_client import Game
 from src.menu import Menu
 from src.renderer import draw_game
@@ -87,6 +87,10 @@ class NATSClient:
         except Exception:
             pass
 
+    @property
+    def is_connected(self):
+        return self._nc is not None and self._nc.is_connected
+
     def send_input(self, inp):
         if self._nc and self.game_id is not None and self.slot is not None:
             subj = sub_game(self.game_id, "input", str(self.slot))
@@ -132,6 +136,9 @@ class App:
         self.prev_mouse_down = False
         self.muted = True
         self.latest_state = None
+        self.game_over_timer = 0
+        self.waiting_deadline = None
+        self.waiting_players = 1
 
     def run(self):
         while True:
@@ -177,6 +184,17 @@ class App:
                         self.state = "game"
         return None
 
+    def _disconnect_to_menu(self, msg):
+        """Return to main menu on server disconnect."""
+        if self.nats:
+            self.nats.close()
+            self.nats = None
+        self.state = "menu"
+        self.game = None
+        self.latest_state = None
+        self.error_msg = msg
+        self.error_timer = 180
+
     def _start_online(self):
         self.error_msg = None
         self.nats = NATSClient()
@@ -185,6 +203,7 @@ class App:
             result = self.nats.connect_and_match("medium")
             if result.get("ok"):
                 self.state = "waiting"
+                self.waiting_deadline = time.time() + LOBBY_COUNTDOWN
                 print(f"[CLIENT] Joined game {result['game_id']} as player {result['slot']}")
             else:
                 self.error_msg = result.get("error", "Matchmaking failed")
@@ -200,23 +219,48 @@ class App:
 
     def _update(self, dt):
         if self.state == "waiting":
-            # Check if game started (state arriving)
+            if self.nats and not self.nats.is_connected:
+                self._disconnect_to_menu("Server disconnected")
+                return
+            # Update countdown from status messages
             status = self._drain_queue(self.nats.status_queue)
             if status:
-                pass  # could show countdown from status
+                countdown = status.get("countdown", LOBBY_COUNTDOWN)
+                self.waiting_deadline = time.time() + countdown
+                self.waiting_players = status.get("players", self.waiting_players)
+            # Check if game started (state arriving)
             state = self._drain_queue(self.nats.state_queue)
             if state is not None:
                 self.latest_state = state
                 self.state = "remote_game"
 
         elif self.state == "remote_game":
+            if self.nats and not self.nats.is_connected:
+                self._disconnect_to_menu("Server disconnected")
+                return
             state = self._drain_queue(self.nats.state_queue)
             if state is not None:
                 self.latest_state = state
             self._send_local_input()
+            if self.latest_state and self.latest_state.get("game_over"):
+                self.game_over_timer += 1
+                if self.game_over_timer >= FPS * 30:
+                    if self.nats:
+                        self.nats.close()
+                        self.nats = None
+                    self.state = "menu"
+                    self.game = None
+                    self.latest_state = None
+                    self.game_over_timer = 0
 
         elif self.state == "game":
             self.game.update(dt)
+            if self.game and self.game.engine.game_over:
+                self.game_over_timer += 1
+                if self.game_over_timer >= FPS * 30:
+                    self.state = "menu"
+                    self.game = None
+                    self.game_over_timer = 0
 
         if self.error_timer > 0:
             self.error_timer -= 1
@@ -249,21 +293,19 @@ class App:
         elif self.state == "waiting":
             self.screen.fill(BG_COLOR)
             font = pygame.font.SysFont(None, 40)
-            text = font.render("Waiting for players...", True, (200, 200, 220))
+            text = font.render(f"Waiting for players... {self.waiting_players}/4", True, (200, 200, 220))
             rect = text.get_rect(center=(WINDOW_WIDTH // 2, 300))
             self.screen.blit(text, rect)
 
-            counts = self._drain_queue(self.nats.status_queue)
-            remaining = 120
-            if counts:
-                remaining = counts.get("countdown", 120)
+            remaining = max(0, int(self.waiting_deadline - time.time())) if self.waiting_deadline else LOBBY_COUNTDOWN
+            mins, secs = divmod(remaining, 60)
             timer_font = pygame.font.SysFont(None, 60)
-            timer = timer_font.render(f"{remaining}s", True, (160, 160, 200))
+            timer = timer_font.render(f"{mins}:{secs:02d}", True, (160, 160, 200))
             trect = timer.get_rect(center=(WINDOW_WIDTH // 2, 360))
             self.screen.blit(timer, trect)
 
             hint = pygame.font.SysFont(None, 24).render(
-                f"Game will start in {remaining}s. Press Q to cancel.", True, (100, 100, 120)
+                "Press Q to cancel.", True, (100, 100, 120)
             )
             hrect = hint.get_rect(center=(WINDOW_WIDTH // 2, 420))
             self.screen.blit(hint, hrect)

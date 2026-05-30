@@ -18,9 +18,10 @@ from src.nats_common import (
 
 
 class BotClient:
-    def __init__(self, difficulty="medium", name="bot"):
+    def __init__(self, difficulty="medium", name="bot", admin=False):
         self.difficulty = difficulty
         self.name = name
+        self.admin = admin
         self.nc = None
         self.game_id = None
         self.slot = None
@@ -35,7 +36,7 @@ class BotClient:
         self.nc = await nats.connect(NATS_SERVER, connect_timeout=CONNECT_TIMEOUT)
         msg = await self.nc.request(
             SUBJECT_MATCH,
-            encode_msg({"difficulty": self.difficulty}),
+            encode_msg({"difficulty": self.difficulty, "bot": True, "admin_bot": self.admin}),
             timeout=REQUEST_TIMEOUT,
         )
         result = decode_msg(msg.data)
@@ -50,6 +51,10 @@ class BotClient:
         subj = sub_game(self.game_id, "state")
         self._state_sub = await self.nc.subscribe(subj, cb=self._on_state)
 
+        # Subscribe to kicked notification
+        kicked_subj = sub_game(self.game_id, "kicked", str(self.slot))
+        await self.nc.subscribe(kicked_subj, cb=self._on_kicked)
+
         # Init AI controller for our slot
         self.ai = AIController(self.slot, self.difficulty)
         return result
@@ -59,6 +64,10 @@ class BotClient:
             self.state = decode_state(msg.data)
         except Exception:
             pass
+
+    async def _on_kicked(self, msg):
+        print(f"[{self.name}] Kicked from game")
+        self._running = False
 
     async def run(self, tick_hz=60):
         """Main loop: generate AI input and send to server at tick_hz."""
@@ -103,8 +112,9 @@ class BotClient:
 
             await asyncio.sleep(interval)
 
-        print(f"[{self.name}] Game over, disconnecting")
-        await self.nc.drain()
+        print(f"[{self.name}] Stopped, disconnecting")
+        if self.nc.is_connected:
+            await self.nc.drain()
 
     def stop(self):
         self._running = False

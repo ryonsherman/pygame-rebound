@@ -488,6 +488,7 @@ class GameEngine:
         self.human_players = set(human_players)
         self.obstacles = _init_obstacles()
         self.ai = [AIController(i, difficulty, self.obstacles) for i in range(4) if i not in self.human_players]
+        self.difficulty = difficulty
         self.frame = 0
         self.game_over = False
         self.winner = None
@@ -548,6 +549,18 @@ class GameEngine:
 
             if inp.get("click", False) and not castle["shield"]["active"]:
                 castle["fire_request"] = castle["cannon_angle"]
+
+    def add_ai(self, slot):
+        """Spawn an AI controller for a slot (e.g. when a player leaves mid-game)."""
+        self.human_players.discard(slot)
+        # Don't duplicate
+        if not any(ai.owner == slot for ai in self.ai):
+            self.ai.append(AIController(slot, self.difficulty, self.obstacles))
+
+    def remove_ai(self, slot):
+        """Remove AI controller for a slot (e.g. when a player joins mid-game)."""
+        self.human_players.add(slot)
+        self.ai = [ai for ai in self.ai if ai.owner != slot]
 
     def update(self):
         self.sound_events.clear()
@@ -612,7 +625,8 @@ class GameEngine:
                           f"v:({projectile['vx']:.1f},{projectile['vy']:.1f})")
 
         for ai in self.ai:
-            ai.update(self.castles, self.projectiles)
+            if ai.owner not in self.human_players:
+                ai.update(self.castles, self.projectiles)
 
         for p in self.projectiles:
             if p["ball_cd"] > 0:

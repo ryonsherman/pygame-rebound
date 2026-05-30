@@ -22,19 +22,25 @@ class GameRoom:
         self.nc = nc
         self.engine = GameEngine(difficulty=difficulty, human_players=set())
         self.players = {}
+        self.real_players = set()  # slots occupied by actual humans (not bots)
+        self.admin_created = False  # set True when room created via admin bots command
         self.open_slots = set(range(4))
         self.status = "waiting"
         self.input_buffers = {}
         self.frame = 0
         self.created_at = time.time()
 
-    def assign_slot(self):
+    def assign_slot(self, bot=False):
         if not self.open_slots:
             return None
         slot = min(self.open_slots)
         self.open_slots.remove(slot)
         self.players[slot] = True
         self.engine.human_players.add(slot)
+        if not bot:
+            self.real_players.add(slot)
+        if self.status == "playing":
+            self.engine.remove_ai(slot)
         return slot
 
     def handle_input(self, slot, data):
@@ -44,8 +50,19 @@ class GameRoom:
         if slot in self.players:
             del self.players[slot]
             self.open_slots.add(slot)
+            self.real_players.discard(slot)
             self.engine.human_players.discard(slot)
-            print(f"[ROOM {self.game_id}] Player slot {slot} disconnected")
+            if self.status == "playing":
+                self.engine.add_ai(slot)
+                print(f"[ROOM {self.game_id}] Player slot {slot} left — AI takeover")
+                if not self.real_players and not self.admin_created:
+                    self.status = "finished"
+                    print(f"[ROOM {self.game_id}] No real players — closing")
+            else:
+                print(f"[ROOM {self.game_id}] Player slot {slot} left")
+                if not self.players:
+                    self.status = "finished"
+                    print(f"[ROOM {self.game_id}] Empty room — closing")
 
     def countdown_remaining(self):
         return max(0, int(COUNTDOWN_SECONDS - (time.time() - self.created_at)))
@@ -69,6 +86,10 @@ class GameRoom:
                 await self.publish_status()
 
             if not self.open_slots or self.countdown_remaining() <= 0:
+                if not self.real_players and not self.admin_created:
+                    self.status = "finished"
+                    print(f"[ROOM {self.game_id}] No real players — closing")
+                    return
                 self.status = "playing"
                 print(f"[ROOM {self.game_id}] Game started — {len(self.players)} human, "
                       f"{4 - len(self.players)} AI")
@@ -84,6 +105,8 @@ class GameRoom:
 
             if frame % (60 // STATE_HZ) == 0:
                 state = self.engine.get_state()
+                for c in state["castles"]:
+                    c["human"] = c["owner"] in self.real_players
                 await self.nc.publish(sub_game(self.game_id, "state"), encode_state(state).encode())
 
                 if self.engine.game_over:
@@ -140,13 +163,15 @@ class GameServer:
     async def _process_pending_matches(self):
         matches = self.pending_matches
         self.pending_matches = []
-        for msg, difficulty in matches:
+        for msg, difficulty, is_bot, admin_bot in matches:
             try:
                 # Try to fill an existing waiting room first
                 placed = False
                 for room in self.rooms.values():
                     if room.status == "waiting" and room.difficulty == difficulty and room.open_slots:
-                        slot = room.assign_slot()
+                        slot = room.assign_slot(bot=is_bot)
+                        if admin_bot:
+                            room.admin_created = True
                         print(f"[MATCH] Player → room {room.game_id} (slot {slot}, {len(room.players)}/4)")
                         await msg.respond(encode_msg({
                             "ok": True, "game_id": room.game_id, "slot": slot,
@@ -157,7 +182,9 @@ class GameServer:
                 if not placed:
                     gid = uuid.uuid4().hex[:8]
                     room = GameRoom(gid, difficulty, self.nc)
-                    slot = room.assign_slot()
+                    if admin_bot:
+                        room.admin_created = True
+                    slot = room.assign_slot(bot=is_bot)
                     self.rooms[gid] = room
                     print(f"[MATCH] New room {gid} — first player (slot {slot})")
                     await msg.respond(encode_msg({
@@ -174,7 +201,9 @@ class GameServer:
         try:
             data = decode_msg(msg.data)
             difficulty = data.get("difficulty", "medium")
-            self.pending_matches.append((msg, difficulty))
+            is_bot = data.get("bot", False)
+            admin_bot = data.get("admin_bot", False)
+            self.pending_matches.append((msg, difficulty, is_bot, admin_bot))
         except Exception as e:
             print(f"[MATCH] Error: {e}")
             try:
@@ -277,8 +306,11 @@ class GameServer:
                 await msg.respond(encode_msg({"ok": False, "error": "Game not found"}))
                 return
             if not room.open_slots:
-                await msg.respond(encode_msg({"ok": False, "error": "Room is full"}))
-                return
+                # Kick the highest-numbered player slot to make room
+                kick_slot = max(room.players.keys())
+                room.handle_leave(kick_slot)
+                await self.nc.publish(sub_game(game_id, "kicked", str(kick_slot)), b"")
+                print(f"[ROOM {game_id}] Replaced slot {kick_slot} for admin join")
             slot = room.assign_slot()
             await msg.respond(encode_msg({"ok": True, "game_id": game_id, "slot": slot}))
             print(f"[ROOM {game_id}] Admin joined as slot {slot}")
