@@ -472,6 +472,7 @@ class GameEngine:
         speed_mult = {"easy": 0.9, "medium": 1.0, "hard": 1.1}.get(difficulty, 1.0)
         self.projectile_speed = PROJECTILE_SPEED * speed_mult
         self.max_bounces = {"easy": 3, "medium": 4, "hard": 5}.get(difficulty, 3)
+        self.max_projectiles = {"easy": 15, "medium": 18, "hard": 21}.get(difficulty, 15)
         self.projectiles = []
         self.castles = self._init_castles()
         if human_players is None:
@@ -666,7 +667,7 @@ class GameEngine:
 
         self.projectiles = [p for p in self.projectiles if p["alive"]]
 
-        while len(self.projectiles) > MAX_PROJECTILES:
+        while len(self.projectiles) > self.max_projectiles:
             removed = self.projectiles.pop(0)
             if DEBUG:
                 print(f"[CULL] id:{removed['id']} owner:{COLOR_LETTERS[removed['owner']]} "
