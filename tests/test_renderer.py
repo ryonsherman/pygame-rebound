@@ -49,16 +49,17 @@ class TestDrawGamePaths:
     def test_both_paths_callable(self, mock_pygame):
         """#71: Both render paths should execute without error."""
         from src.engine import GameEngine
+        from src.renderer import draw_game, draw_game_direct
         eng = GameEngine(difficulty="medium", human_players=[0])
         for _ in range(10):
             eng.update()
-        # draw_game_direct needs a screen mock
         screen = MagicMock()
         screen.get_width = MagicMock(return_value=1024)
         screen.get_height = MagicMock(return_value=768)
-        # Can't easily call renderer without real pygame; verify engine state is valid
         state = eng.get_state()
-        assert "castles" in state
+        # Both render paths should execute without error
+        draw_game(screen, state)
+        draw_game_direct(screen, eng)
 
 
 class TestDeadCastleEarlyReturn:
@@ -68,7 +69,13 @@ class TestDeadCastleEarlyReturn:
         """#72: draw_castle returns early when alive=False."""
         from src.renderer import draw_castle
         screen = MagicMock()
-        castle = {"alive": False, "owner": 0, "center": (100, 100)}
+        castle = {
+            "alive": False, "owner": 0, "center": (100, 100),
+            "cannon_angle": 0,
+            "bricks": [{"alive": True, "hp": 2, "rect": (85, 85, 14, 14)}],
+            "shield": {"active": False},
+            "human": False,
+        }
         draw_castle(screen, castle)
         # No draw calls should have been made (other than the alive check)
         screen.blit.assert_not_called()
@@ -117,13 +124,23 @@ class TestCrownHuman:
         """#76: draw_castle only calls draw_crown when human=True."""
         from src.renderer import draw_castle
         screen = MagicMock()
-        # Castle with human=False
+        # Castle with human=False — crown should not be drawn
         castle = {
             "alive": True, "owner": 0, "center": (100, 100),
-            "cannon_angle": 0, "bricks": [], "shield": {"active": False},
+            "cannon_angle": 0,
+            "bricks": [{"alive": True, "hp": 2, "rect": (85, 85, 14, 14)}],
+            "shield": {"active": False},
             "human": False,
         }
-        # Should not crash; crown not drawn for non-human
+        with patch("src.renderer.draw_crown") as mock_crown:
+            draw_castle(screen, castle)
+            mock_crown.assert_not_called()
+
+        # Castle with human=True — crown should be drawn
+        castle["human"] = True
+        with patch("src.renderer.draw_crown") as mock_crown:
+            draw_castle(screen, castle)
+            mock_crown.assert_called_once()
 
 
 class TestStatsPosition:

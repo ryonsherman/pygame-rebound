@@ -149,32 +149,44 @@ class TestRoomTickException:
         room.frame = 1
         room.tick = AsyncMock(side_effect=RuntimeError("boom"))
         server.rooms = {"test": room}
-        # The server loop catches this:
-        try:
-            await room.tick(1)
-        except Exception as e:
-            # Server prints error but doesn't crash
-            assert str(e) == "boom"
+        # Simulate what the server loop does: call tick and catch exceptions
+        errors = []
+        for gid, r in list(server.rooms.items()):
+            if r.status == "finished":
+                continue
+            try:
+                await r.tick(server.frame)
+            except Exception as e:
+                errors.append(str(e))
+        # Server catches the error without crashing
+        assert len(errors) == 1
+        assert errors[0] == "boom"
+        # Room is still in rooms dict (not removed)
+        assert "test" in server.rooms
 
 
 class TestRoomCleanupDelay:
     """#40: Room cleanup after 5-second delay."""
 
     def test_finished_room_removed_after_delay(self, mock_nc):
-        """#40: Finished room is cleaned up after 5s * 60fps = 300 frames."""
+        """#40: Finished room is cleaned up after 300 frames (5s * 60fps)."""
         server = GameServer()
         server.nc = mock_nc
         room = GameRoom("test", "medium", mock_nc)
         room.status = "finished"
         room.frame = 100
         server.rooms = {"test": room}
-        server.frame = 100 + 60 * 5 + 1  # > 300 frames later
-        # In the server loop, this condition removes finished rooms
-        finished = []
-        for gid, r in list(server.rooms.items()):
-            if r.status == "finished":
-                if r.frame > 0 and (server.frame - r.frame) > 60 * 5:
-                    finished.append(gid)
+        # Not enough time — room should NOT be removed
+        server.frame = 100 + 60 * 5 - 1
+        finished = [gid for gid, r in server.rooms.items()
+                    if r.status == "finished" and r.frame > 0
+                    and (server.frame - r.frame) > 60 * 5]
+        assert "test" not in finished
+        # Enough time — room should be removed
+        server.frame = 100 + 60 * 5 + 1
+        finished = [gid for gid, r in server.rooms.items()
+                    if r.status == "finished" and r.frame > 0
+                    and (server.frame - r.frame) > 60 * 5]
         assert "test" in finished
 
 
@@ -216,3 +228,27 @@ class TestAdminJoinOpenSlot:
         resp = decode_msg(msg.respond.call_args[0][0])
         assert resp["ok"]
         assert resp["slot"] == 2  # first open slot
+
+    @pytest.mark.asyncio
+    async def test_join_full_room_kicks_highest_slot(self, mock_nc):
+        """#42b: Admin join with full room kicks highest-numbered slot."""
+        server = GameServer()
+        server.nc = mock_nc
+        room = GameRoom("test", "medium", mock_nc)
+        room.assign_slot(bot=True)  # slot 0
+        room.assign_slot(bot=True)  # slot 1
+        room.assign_slot(bot=True)  # slot 2
+        room.assign_slot(bot=True)  # slot 3
+        assert not room.open_slots
+        server.rooms = {"test": room}
+        msg = MagicMock()
+        msg.data = encode_msg({"game_id": "test"})
+        msg.respond = AsyncMock()
+        await server._on_admin_join(msg)
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        # Slot 3 was kicked (highest), admin got it
+        assert resp["slot"] == 3
+        assert 3 in room.players
+        # Kicked notification published
+        mock_nc.publish.assert_called()

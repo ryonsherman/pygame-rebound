@@ -129,18 +129,27 @@ class TestEvalBrickBounce:
     """#19: _eval_brick_bounce face/direction combinations."""
 
     def test_returns_bounce_point(self):
-        """Should find a valid bounce point for a reachable face."""
-        ai = AIController(0, "hard", [])
-        # AI at bottom-right, target at top-left
+        """Should find a valid bounce point when geometry allows it."""
+        # Owner 1 (top-left) aims toward lower-right quadrant [0, pi/2]
+        # Place obstacle directly below and right, with target further in same direction
+        ai = AIController(1, "hard", [])
         positions = _corner_positions()
-        mx, my = positions[0][0] + CASTLE_SIZE // 2, positions[0][1] + CASTLE_SIZE // 2
-        tx, ty = positions[1][0] + CASTLE_SIZE // 2, positions[1][1] + CASTLE_SIZE // 2
-        # Put an obstacle between them
-        obs_rect = (ax + aw // 2 - 7, ay + ah // 2 - 7, 14, 14)
+        mx, my = positions[1][0] + CASTLE_SIZE // 2, positions[1][1] + CASTLE_SIZE // 2
+        # Target far below-right
+        tx, ty = mx + 400, my + 400
+        # Obstacle between source and target, slightly right of midpoint
+        obs_x = mx + 150
+        obs_y = my + 100
+        obs_rect = (obs_x, obs_y, 14, 14)
         result = ai._eval_brick_bounce(mx, my, tx, ty, *obs_rect)
-        # Result may or may not be None depending on quadrant constraints
-        # Just verify no crash
-        assert result is None or len(result) == 2
+        # With this geometry, a face bounce should be possible
+        # If None, at least verify no crash and that None is valid response
+        if result is not None:
+            assert len(result) == 2
+            bx, by = result
+            # The aim angle from source to bounce point must be in quadrant [0, pi/2]
+            angle = math.atan2(by - my, bx - mx)
+            assert ai._angle_in_quadrant(angle)
 
     def test_returns_none_when_blocked(self):
         """Should return None when no face provides a valid bounce."""

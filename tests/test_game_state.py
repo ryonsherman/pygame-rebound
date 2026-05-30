@@ -99,6 +99,20 @@ class TestGetState:
         assert "shield" in c
         assert "human" in c
 
+    def test_sound_events_contain_fire_event(self):
+        """Sound events include cannon_fire with type and volume after firing."""
+        eng = GameEngine(difficulty="medium", human_players=[0])
+        eng.ai = []
+        c = eng.castles[0]
+        cx, cy = c["center"]
+        eng.handle_input({0: {"mouse_x": cx - 50, "mouse_y": cy - 50, "click": True, "space": False}})
+        eng.update()
+        state = eng.get_state()
+        fire_events = [e for e in state["sound_events"] if e["type"] == "cannon_fire"]
+        assert len(fire_events) == 1
+        assert "volume" in fire_events[0]
+        assert fire_events[0]["volume"] > 0
+
 
 class TestStressFullGame:
     """Stress test: run a full AI game without crash."""

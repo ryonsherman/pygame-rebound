@@ -8,33 +8,82 @@ from src.bot_client import BotClient
 class TestBotStateNone:
     """#50: State is None."""
 
-    def test_no_crash_when_state_none(self):
-        """#50: Bot with state=None should not crash in run logic."""
+    @pytest.mark.asyncio
+    async def test_no_crash_when_state_none(self):
+        """#50: Bot with state=None should not publish any input."""
         bot = BotClient(difficulty="medium")
+        bot.nc = MagicMock()
+        bot.nc.is_connected = True
+        bot.nc.drain = AsyncMock()
+        bot.nc.publish = AsyncMock()
         bot.state = None
-        bot._running = False
-        # The run loop checks `if self.state` — with None it skips
+        bot.game_id = "test"
+        bot.slot = 0
+        bot.ai = MagicMock()
+        bot._running = True
+        # Manually run one iteration by triggering game_over after first loop
+        async def stop_after_one(*a, **kw):
+            bot._running = False
+        bot.nc.drain.side_effect = stop_after_one
+        # Set state to None, then set game_over to stop
+        bot.state = None
+        # Run will exit immediately since state is None and we stop it
+        import asyncio
+        bot._running = True
+        # Use a task with timeout
+        async def run_briefly():
+            bot._running = True
+            # After a small sleep, stop
+            await asyncio.sleep(0.05)
+            bot._running = False
+        task = asyncio.create_task(run_briefly())
+        await bot.run(tick_hz=60)
+        task.cancel()
+        # No publish should have been called (state was None)
+        bot.nc.publish.assert_not_called()
 
 
 class TestBotSlotOutOfRange:
     """#51: Slot >= len(castles)."""
 
-    def test_slot_out_of_range(self):
-        """#51: If slot >= len(castles), bot skips input."""
+    @pytest.mark.asyncio
+    async def test_slot_out_of_range(self):
+        """#51: If slot >= len(castles), bot skips input (no publish)."""
         bot = BotClient(difficulty="medium")
+        bot.nc = MagicMock()
+        bot.nc.is_connected = True
+        bot.nc.drain = AsyncMock()
+        bot.nc.publish = AsyncMock()
         bot.slot = 5
+        bot.game_id = "test"
+        bot.ai = MagicMock()
         bot.state = {"castles": [{} for _ in range(4)], "projectiles": [], "game_over": False}
-        # The run loop checks `self.slot < len(castles)` — would skip
-        assert bot.slot >= len(bot.state["castles"])
+        bot._running = True
+        import asyncio
+        async def stop_soon():
+            await asyncio.sleep(0.05)
+            bot._running = False
+        task = asyncio.create_task(stop_soon())
+        await bot.run(tick_hz=60)
+        task.cancel()
+        # No publish because slot >= len(castles)
+        bot.nc.publish.assert_not_called()
 
 
 class TestBotCastleDead:
     """#52: Castle dead — bot stops sending."""
 
-    def test_dead_castle_no_input(self):
-        """#52: Bot with dead castle skips input."""
+    @pytest.mark.asyncio
+    async def test_dead_castle_no_input(self):
+        """#52: Bot with dead castle skips input (no publish)."""
         bot = BotClient(difficulty="medium")
+        bot.nc = MagicMock()
+        bot.nc.is_connected = True
+        bot.nc.drain = AsyncMock()
+        bot.nc.publish = AsyncMock()
         bot.slot = 0
+        bot.game_id = "test"
+        bot.ai = MagicMock()
         bot.state = {
             "castles": [
                 {"alive": False, "center": (100, 100), "fire_request": None,
@@ -46,21 +95,36 @@ class TestBotCastleDead:
             "projectiles": [],
             "game_over": False,
         }
-        # The condition `castles[self.slot].get("alive")` is False — skips
+        bot._running = True
+        import asyncio
+        async def stop_soon():
+            await asyncio.sleep(0.05)
+            bot._running = False
+        task = asyncio.create_task(stop_soon())
+        await bot.run(tick_hz=60)
+        task.cancel()
+        # No publish because castle is dead
+        bot.nc.publish.assert_not_called()
 
 
 class TestBotGameOver:
     """#53: game_over stops loop."""
 
-    def test_game_over_stops_running(self):
-        """#53: game_over flag should set _running=False."""
+    @pytest.mark.asyncio
+    async def test_game_over_stops_running(self):
+        """#53: game_over flag causes bot to stop and drain."""
         bot = BotClient(difficulty="medium")
+        bot.nc = MagicMock()
+        bot.nc.is_connected = True
+        bot.nc.drain = AsyncMock()
+        bot.nc.publish = AsyncMock()
         bot.state = {"game_over": True}
-        bot._running = True
-        # In run(), the elif branch sets _running = False
-        if bot.state and bot.state.get("game_over", False):
-            bot._running = False
+        bot.game_id = "test"
+        bot.slot = 0
+        bot.ai = MagicMock()
+        await bot.run(tick_hz=60)
         assert not bot._running
+        bot.nc.drain.assert_called_once()
 
 
 class TestBotStop:

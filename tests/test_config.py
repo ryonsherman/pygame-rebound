@@ -42,13 +42,10 @@ class TestColorProxy:
         a = _ColorProxy(100, 100, 100)
         b = _ColorProxy(100, 100, 100)
         assert a == b
-        # pygame.Color is unhashable, so _ColorProxy.__hash__ raises TypeError
-        # Verify eq works; hash may not be supported
-        try:
+        # _ColorProxy delegates to pygame.Color which is unhashable
+        # Verify TypeError is raised on hash attempt
+        with pytest.raises(TypeError):
             hash(a)
-            assert hash(a) == hash(b)
-        except TypeError:
-            pass  # pygame.Color is unhashable — expected
 
     def test_lazy_resolution_no_side_effects(self):
         """#69: _ColorProxy doesn't import pygame until first access."""

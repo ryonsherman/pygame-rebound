@@ -35,15 +35,13 @@ class TestInitFailure:
     """#87: mixer init failure."""
 
     def test_graceful_fallback(self, mock_mixer):
-        """#87: If mixer.init raises, no crash."""
+        """#87: If mixer.init raises, no crash and _initialized stays False."""
         pg, sounds = mock_mixer
         sounds._initialized = False
         pg.mixer.init.side_effect = Exception("No audio device")
-        # Re-import won't work easily, so test the logic directly
-        # The init() catches Exception and returns
         sounds.init()
-        # Should not crash, _initialized remains False or True depending on code flow
-        # In actual code, it returns before setting _initialized = True
+        # Should not crash, _initialized remains False
+        assert not sounds._initialized
 
 
 class TestLegacyStringEvent:

@@ -1,4 +1,5 @@
 """Tests for difficulty scaling parameters and match pacing."""
+import random
 import pytest
 from src.engine import GameEngine
 
@@ -39,12 +40,13 @@ class TestDifficultyPacing:
     """Hard games should complete faster than easy games."""
 
     def test_hard_faster_than_easy(self):
-        """Run 3 trials each and confirm hard avg < easy avg frames."""
+        """Run 3 trials each with seeded RNG and confirm hard avg < easy avg frames."""
         def run(diff, n=3):
             frames = []
-            for _ in range(n):
+            for i in range(n):
+                random.seed(42 + i)
                 eng = GameEngine(difficulty=diff, human_players=[])
-                while not eng.game_over and eng.frame < 20000:
+                while not eng.game_over and eng.frame < 12000:
                     eng.update()
                 frames.append(eng.frame)
             return sum(frames) / len(frames)

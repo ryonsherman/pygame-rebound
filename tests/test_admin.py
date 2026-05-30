@@ -128,11 +128,16 @@ class TestCmdBots:
 class TestCmdJoinLifecycle:
     """#98: cmd_join pygame window lifecycle (concept test)."""
 
-    def test_join_requires_game_id(self):
-        """#98: Join command needs a game ID."""
-        # Just verify the admin shell structure handles this
-        # Real test would need full async + pygame mock
-        pass
+    @pytest.mark.asyncio
+    async def test_join_requires_game_id(self):
+        """#98: Join command needs a valid game ID — returns error for unknown game."""
+        from admin import _check_game
+        nc = MagicMock()
+        from src.nats_common import encode_msg
+        response = encode_msg({"ok": True, "games": []})
+        nc.request = AsyncMock(return_value=MagicMock(data=response))
+        gid, status = await _check_game(nc, "nonexistent", None)
+        assert gid is None
 
 
 class TestCmdSpectateLifecycle:

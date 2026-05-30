@@ -107,13 +107,19 @@ class TestBallBallCollision:
         eng = GameEngine(difficulty="medium", human_players=[])
         eng.projectiles.clear()
         eng.ai = []
-        a = _make_projectile(ax + aw // 2, ay + ah // 2, 0, 0, 0, PROJECTILE_SPEED, 1)
-        b = _make_projectile(ax + aw // 2 + 5, ay + ah // 2, math.pi, 1, 1, PROJECTILE_SPEED, 2)
+        # Place balls overlapping (distance 2 < radius*2=12) with zero velocity
+        # so they don't move apart before collision check
+        a = _make_projectile(ax + aw // 2, ay + ah // 2, 0, 0, 0, 0, 1)
+        b = _make_projectile(ax + aw // 2 + 2, ay + ah // 2, math.pi, 1, 1, 0, 2)
+        a["vx"], a["vy"] = 1, 0
+        b["vx"], b["vy"] = -1, 0
+        a["ball_cd"] = 0
+        b["ball_cd"] = 0
         eng.projectiles.extend([a, b])
         eng.update()
-        # If they collided, cooldown should be set
-        if math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < a["radius"] + b["radius"] + 5:
-            assert a["ball_cd"] == 8 or b["ball_cd"] == 8
+        # Balls were overlapping so collision must have occurred
+        assert a["ball_cd"] == 8
+        assert b["ball_cd"] == 8
 
 
 class TestProjectileShrink:

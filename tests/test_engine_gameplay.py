@@ -214,3 +214,135 @@ class TestBlockades:
         for _ in range(MAX_BLOCKADES + 5):
             eng._spawn_blockade(c)
         assert len(c["blockades"]) <= MAX_BLOCKADES
+
+
+class TestCheckBlockadeHits:
+    """Coverage gap: _check_blockade_hits destroys blockade bricks and adjusts velocity."""
+
+    def test_projectile_destroys_blockade_brick(self):
+        """Projectile overlapping a blockade brick destroys it."""
+        eng = GameEngine(difficulty="medium", human_players=[])
+        eng.ai = []
+        eng.projectiles.clear()
+        from src.engine import _make_blockade
+        # Place a blockade at known position
+        bx, by = ax + aw // 2 + 80, ay + ah // 2 + 80
+        blockade = _make_blockade(bx, by)
+        eng.castles[0]["blockades"].append(blockade)
+        # Place a projectile overlapping the first brick
+        p = _make_projectile(bx + BRICK_SIZE // 2, by + BRICK_SIZE // 2, 0, 1, 1, PROJECTILE_SPEED, 99)
+        eng.projectiles.append(p)
+        eng._check_blockade_hits()
+        # At least one brick should be destroyed
+        destroyed = [b for b in blockade["bricks"] if not b["alive"]]
+        assert len(destroyed) >= 1
+
+    def test_blockade_hit_increments_bounces(self):
+        """Projectile hitting a blockade gets bounce count incremented."""
+        eng = GameEngine(difficulty="medium", human_players=[])
+        eng.ai = []
+        eng.projectiles.clear()
+        from src.engine import _make_blockade
+        bx, by = ax + aw // 2 + 80, ay + ah // 2 + 80
+        blockade = _make_blockade(bx, by)
+        eng.castles[0]["blockades"].append(blockade)
+        p = _make_projectile(bx + BRICK_SIZE // 2, by + BRICK_SIZE // 2, 0, 1, 1, PROJECTILE_SPEED, 99)
+        p["bounces"] = 0
+        eng.projectiles.append(p)
+        eng._check_blockade_hits()
+        assert p["bounces"] >= 1
+
+
+class TestReflectProjectile:
+    """Coverage gap: _reflect_projectile unit tests."""
+
+    def test_reflect_reverses_and_offsets_angle(self):
+        """_reflect_projectile reverses direction with ±60° offset."""
+        eng = GameEngine(difficulty="medium", human_players=[])
+        p = _make_projectile(ax + aw // 2, ay + ah // 2, 0, 0, 0, PROJECTILE_SPEED, 1)
+        original_speed = math.hypot(p["vx"], p["vy"])
+        eng._reflect_projectile(p)
+        # Speed should be preserved (no shrink since bounce_cooldown was 0 but now it might shrink)
+        new_speed = math.hypot(p["vx"], p["vy"])
+        # After reflect, speed is reduced by 0.88 factor (since bounce_cooldown was 0)
+        assert new_speed == pytest.approx(original_speed * 0.88, abs=0.1)
+        # Bounce count incremented
+        assert p["bounces"] == 1
+        # bounce_cooldown set
+        assert p["bounce_cooldown"] == 15
+
+    def test_reflect_kills_at_max_bounces(self):
+        """_reflect_projectile kills projectile at max bounces."""
+        eng = GameEngine(difficulty="easy", human_players=[])
+        p = _make_projectile(ax + aw // 2, ay + ah // 2, 0, 0, 0, PROJECTILE_SPEED, 1)
+        p["bounces"] = eng.max_bounces - 1
+        eng._reflect_projectile(p)
+        assert not p["alive"]
+
+
+class TestDamageCastleStats:
+    """Coverage gap: _damage_castle increments attacker stats."""
+
+    def test_hits_stat_incremented(self):
+        """_damage_castle increments attacker's stats['hits']."""
+        eng = GameEngine(difficulty="medium", human_players=[])
+        eng.ai = []
+        attacker = eng.castles[0]
+        target = eng.castles[1]
+        cx, cy = target["center"]
+        p = _make_projectile(cx, cy, 0, 0, 0, 0, 1)
+        eng.projectiles.append(p)
+        assert attacker["stats"]["hits"] == 0
+        eng._damage_castle(target, p, 0)
+        assert attacker["stats"]["hits"] == 1
+
+
+class TestShieldBlocksFire:
+    """Coverage gap: shield active blocks fire request."""
+
+    def test_click_while_shield_active_does_not_fire(self):
+        """Click is ignored when shield is active."""
+        eng = GameEngine(difficulty="medium", human_players=[0])
+        eng.ai = []
+        c = eng.castles[0]
+        cx, cy = c["center"]
+        # Activate shield
+        eng.handle_input({0: {"mouse_x": cx - 50, "mouse_y": cy - 50, "click": False, "space": True}})
+        eng.update()
+        assert c["shield"]["active"]
+        # Now try to fire while shield is still active
+        eng.handle_input({0: {"mouse_x": cx - 50, "mouse_y": cy - 50, "click": True, "space": True}})
+        # fire_request should NOT be set because shield is active
+        assert c["fire_request"] is None
+
+
+class TestBlockadePlacement:
+    """Coverage gap (MAJ-5): _spawn_blockade placement and overlap avoidance."""
+
+    def test_blockade_no_overlap(self):
+        """New blockade doesn't overlap existing ones."""
+        eng = GameEngine(difficulty="medium", human_players=[])
+        eng.ai = []
+        c = eng.castles[1]  # Owner 1 (top-left)
+        # Spawn several blockades and verify no overlap
+        for _ in range(MAX_BLOCKADES):
+            eng._spawn_blockade(c)
+        # Check all blockade bricks don't overlap each other
+        all_rects = []
+        for blockade in c["blockades"]:
+            for brick in blockade["bricks"]:
+                all_rects.append(brick["rect"])
+        for i, (rx1, ry1, rw1, rh1) in enumerate(all_rects):
+            for j, (rx2, ry2, rw2, rh2) in enumerate(all_rects):
+                if i >= j:
+                    continue
+                # Check no overlap (allow touching)
+                if (rx1 < rx2 + rw2 and rx2 < rx1 + rw1 and
+                        ry1 < ry2 + rh2 and ry2 < ry1 + rh1):
+                    # Same blockade bricks can overlap (they're a 2x2 grid)
+                    # Only check across different blockades
+                    block_i = i // 4
+                    block_j = j // 4
+                    if block_i != block_j:
+                        # They shouldn't overlap (with BRICK_SIZE gap)
+                        assert False, f"Blockade bricks overlap: {all_rects[i]} vs {all_rects[j]}"

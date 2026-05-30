@@ -161,21 +161,22 @@ class TestBounceCooldown:
     """#9: Bounce cooldown prevents shrink."""
 
     def test_bounce_cooldown_prevents_shrink(self):
-        """#9: When bounce_cooldown > 0, radius should not shrink."""
+        """#9: When bounce_cooldown > 0, radius should not shrink on wall bounce."""
         eng = GameEngine(difficulty="medium", human_players=[])
         eng.projectiles.clear()
         eng.ai = []
-        p = _make_projectile(ax + 20, ay + ah // 2, math.pi, 0, 0, PROJECTILE_SPEED, 1)
+        # Projectile heading straight at left wall, will bounce quickly
+        p = _make_projectile(ax + 10, ay + ah // 2, math.pi, 0, 0, PROJECTILE_SPEED, 1)
         p["bounce_cooldown"] = 15
         initial_radius = p["radius"]
         eng.projectiles.append(p)
+        # Run enough frames for the wall bounce to happen
         for _ in range(5):
             eng.update()
-        # If it bounced while cooldown > 0, radius should not have changed via the cooldown path
-        # (bounces still increment, but shrink is skipped)
-        if p["bounces"] > 0:
-            # radius may or may not have changed depending on timing, but it should never go below 2
-            assert p["radius"] >= 2
+        # It should have bounced (heading left into wall)
+        assert p["bounces"] >= 1
+        # Radius must remain at initial_radius because cooldown was active during bounce
+        assert p["radius"] == initial_radius
 
 
 class TestProjectileCulling:

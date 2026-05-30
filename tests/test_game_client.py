@@ -3,7 +3,7 @@ import math
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.engine import GameEngine
-from config import SHIELD_COOLDOWN, SHIELD_DURATION
+from config import SHIELD_COOLDOWN, SHIELD_DURATION, ARENA_RECT
 
 
 class TestShieldCooldownGuard:
@@ -77,26 +77,40 @@ class TestGameOver30SecReturn:
 class TestNATSClientErrors:
     """#60-63: NATSClient error handling (unit-testable parts)."""
 
-    def test_connect_failure_concept(self):
+    @pytest.mark.asyncio
+    async def test_connect_failure_raises(self):
         """#60: NATSClient connect failure — BotClient raises RuntimeError."""
-        # Test that BotClient properly checks ok:false
         from src.bot_client import BotClient
+        from src.nats_common import encode_msg
         bot = BotClient()
-        # If match returns ok:false, connect_and_match should raise
-        # This is tested via mock
+        mock_nc = MagicMock()
+        mock_nc.request = AsyncMock(return_value=MagicMock(
+            data=encode_msg({"ok": False, "error": "No room"})
+        ))
+        with patch("src.bot_client.nats") as mock_nats:
+            mock_nats.connect = AsyncMock(return_value=mock_nc)
+            with pytest.raises(RuntimeError):
+                await bot.connect_and_match()
 
-    def test_match_returns_not_ok(self):
+    @pytest.mark.asyncio
+    async def test_match_returns_not_ok(self):
         """#61: match returns ok:false — raises RuntimeError."""
         from src.bot_client import BotClient
+        from src.nats_common import encode_msg
         bot = BotClient()
-        # Simulate: the match response is {"ok": false}
-        # In real code, this raises RuntimeError
+        mock_nc = MagicMock()
+        mock_nc.request = AsyncMock(return_value=MagicMock(
+            data=encode_msg({"ok": False, "error": "Room full"})
+        ))
+        with patch("src.bot_client.nats") as mock_nats:
+            mock_nats.connect = AsyncMock(return_value=mock_nc)
+            with pytest.raises(RuntimeError, match="Match failed"):
+                await bot.connect_and_match()
 
     def test_state_queue_concept(self):
         """#63: State updates overwrite previous (no queue buildup)."""
         from src.bot_client import BotClient
         bot = BotClient()
-        # BotClient.state is just a single variable, always latest
         bot.state = {"frame": 1}
         bot.state = {"frame": 2}
-        assert bot.state["frame"] == 2  # Latest wins
+        assert bot.state["frame"] == 2  # Latest wins — no accumulation
