@@ -55,8 +55,8 @@ class BotClient:
         kicked_subj = sub_game(self.game_id, "kicked", str(self.slot))
         await self.nc.subscribe(kicked_subj, cb=self._on_kicked)
 
-        # Init AI controller for our slot
-        self.ai = AIController(self.slot, self.difficulty)
+        # AI controller initialized when we receive first state (need obstacles)
+        self.ai = None
         return result
 
     async def _on_state(self, msg):
@@ -77,6 +77,11 @@ class BotClient:
         try:
             while self._running:
                 if self.state and not self.state.get("game_over", False):
+                    # Initialize AI with obstacles on first state
+                    if self.ai is None:
+                        obstacles = self.state.get("obstacles", [])
+                        self.ai = AIController(self.slot, self.difficulty, obstacles)
+                    
                     castles = self.state.get("castles", [])
                     projectiles = self.state.get("projectiles", [])
 
