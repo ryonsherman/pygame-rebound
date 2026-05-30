@@ -1,6 +1,8 @@
 import asyncio
 import json
+import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -123,10 +125,24 @@ class NATSClient:
 WHITE = (255, 255, 255)
 
 
+def _raise_window():
+    """Bring the pygame window to front (macOS)."""
+    try:
+        pid = os.getpid()
+        subprocess.Popen([
+            "osascript", "-e",
+            f'tell application "System Events" to set frontmost of '
+            f'the first process whose unix id is {pid} to true'
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 class App:
     def __init__(self, spectate=False):
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        _raise_window()
         pygame.display.set_caption("Rebound")
         self.clock = pygame.time.Clock()
         self.menu = Menu()
