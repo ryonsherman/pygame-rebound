@@ -6,7 +6,7 @@ import time
 import nats
 from src.nats_common import (
     NATS_SERVER, SUBJECT_MATCH, SUBJECT_ADMIN_LIST, SUBJECT_ADMIN_STOP,
-    SUBJECT_ADMIN_KICK, SUBJECT_ADMIN_JOIN, SUBJECT_ADMIN_KILL, sub_game, encode_msg, decode_msg, encode_state,
+    SUBJECT_ADMIN_KICK, SUBJECT_ADMIN_JOIN, SUBJECT_ADMIN_KILL, SUBJECT_ADMIN_BOTS, sub_game, encode_msg, decode_msg, encode_state,
     verify_auth, sign_request,
 )
 from config import NATS_NAME, NATS_PREFIX, LOBBY_COUNTDOWN, STATE_HZ, STATUS_HZ, CONNECT_TIMEOUT
