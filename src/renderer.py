@@ -303,57 +303,57 @@ def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
     
     # Check quadrant boundary if clamped
     if clamp_to_quadrant:
-        if owner == 0:  # Bottom-right, clamp to up-left (can't cross center lines)
-            if dx < 0:  # aiming left
+        if owner == 0:  # Bottom-right, can aim where x > arena_cx AND y > arena_cy
+            if dx < 0:  # aiming left, check if crosses vertical center line
                 t = (arena_cx - 1 - cx) / dx
                 if t > 0:
                     y = cy + t * dy
-                    if ay <= y <= arena_cy - 1:
+                    if arena_cy + 1 <= y <= ay + ah:  # y must be in bottom half
                         t_values.append(t)
-            if dy < 0:  # aiming up
+            if dy < 0:  # aiming up, check if crosses horizontal center line
                 t = (arena_cy - 1 - cy) / dy
                 if t > 0:
                     x = cx + t * dx
-                    if ax <= x <= arena_cx - 1:
+                    if arena_cx + 1 <= x <= ax + aw:  # x must be in right half
                         t_values.append(t)
-        elif owner == 1:  # Top-left, clamp to down-right
-            if dx > 0:  # aiming right
+        elif owner == 1:  # Top-left, can aim where x < arena_cx AND y < arena_cy
+            if dx > 0:  # aiming right, check if crosses vertical center line
                 t = (arena_cx + 1 - cx) / dx
                 if t > 0:
                     y = cy + t * dy
-                    if arena_cy + 1 <= y <= ay + ah:
+                    if ay <= y <= arena_cy - 1:  # y must be in top half
                         t_values.append(t)
-            if dy > 0:  # aiming down
+            if dy > 0:  # aiming down, check if crosses horizontal center line
                 t = (arena_cy + 1 - cy) / dy
                 if t > 0:
                     x = cx + t * dx
-                    if arena_cx + 1 <= x <= ax + aw:
+                    if ax <= x <= arena_cx - 1:  # x must be in left half
                         t_values.append(t)
-        elif owner == 2:  # Top-right, clamp to down-left
-            if dx < 0:  # aiming left
+        elif owner == 2:  # Top-right, can aim where x > arena_cx AND y < arena_cy
+            if dx < 0:  # aiming left, check if crosses vertical center line
                 t = (arena_cx - 1 - cx) / dx
                 if t > 0:
                     y = cy + t * dy
-                    if arena_cy + 1 <= y <= ay + ah:
+                    if ay <= y <= arena_cy - 1:  # y must be in top half
                         t_values.append(t)
-            if dy > 0:  # aiming down
+            if dy > 0:  # aiming down, check if crosses horizontal center line
                 t = (arena_cy + 1 - cy) / dy
                 if t > 0:
                     x = cx + t * dx
-                    if ax <= x <= arena_cx - 1:
+                    if arena_cx + 1 <= x <= ax + aw:  # x must be in right half
                         t_values.append(t)
-        else:  # owner == 3, Bottom-left, clamp to up-right
-            if dx > 0:  # aiming right
+        else:  # owner == 3, Bottom-left, can aim where x < arena_cx AND y > arena_cy
+            if dx > 0:  # aiming right, check if crosses vertical center line
                 t = (arena_cx + 1 - cx) / dx
                 if t > 0:
                     y = cy + t * dy
-                    if ay <= y <= arena_cy - 1:
+                    if arena_cy + 1 <= y <= ay + ah:  # y must be in bottom half
                         t_values.append(t)
-            if dy < 0:  # aiming up
+            if dy < 0:  # aiming up, check if crosses horizontal center line
                 t = (arena_cy - 1 - cy) / dy
                 if t > 0:
                     x = cx + t * dx
-                    if arena_cx + 1 <= x <= ax + aw:
+                    if ax <= x <= arena_cx - 1:  # x must be in left half
                         t_values.append(t)
     
     # Check collision with obstacles (barricades and blockades)
