@@ -10,6 +10,14 @@ A fast-paced 4-player castle battle game built with Pygame and networked multipl
 
 ![Game Screenshot](screenshots/game.png)
 
+## Screenshots
+
+![Menu](screenshots/menu.png)
+*Main menu with difficulty selection*
+
+![Game](screenshots/game.png)
+*Gameplay view with 4 castles, projectiles, and HUD*
+
 ## Overview
 
 Each player owns a castle in one corner of the arena. Castles have a rotating cannon that fires bouncing projectiles. When a projectile hits a castle's bricks, those bricks are destroyed. **Last castle standing wins.**
