@@ -335,7 +335,7 @@ async def _run():
     if password:
         print("[SERVER] Admin auth enabled (HMAC-SHA256)")
     else:
-        print("[SERVER] Admin commands disabled (no password)")
+        print("[SERVER] WARNING: No admin password — admin commands are disabled")
     try:
         await server.start()
     except asyncio.CancelledError:
