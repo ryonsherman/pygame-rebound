@@ -359,41 +359,40 @@ def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
     # Check collision with obstacles (barricades and blockades)
     for obs in obstacles:
         rx, ry, rw, rh = obs["rect"]
-        # Ray vs AABB intersection
-        t_hit = float('inf')
+        # Proper ray-AABB intersection using slab method
+        t_enter = 0.0
+        t_exit = float('inf')
         
-        # Check if ray is parallel to slab
+        # X slab
         if abs(dx) < 0.0001:
+            # Ray is parallel to x slab
             if cx < rx or cx > rx + rw:
                 continue
         else:
             t1 = (rx - cx) / dx
             t2 = (rx + rw - cx) / dx
-            t_min = min(t1, t2)
-            t_max = max(t1, t2)
-            if t_max < 0:
-                continue
-            t_hit = max(0, t_min) if t_min > 0 else t_hit
+            t_enter = max(t_enter, min(t1, t2))
+            t_exit = min(t_exit, max(t1, t2))
         
+        # Y slab
         if abs(dy) < 0.0001:
+            # Ray is parallel to y slab
             if cy < ry or cy > ry + rh:
                 continue
         else:
             t1 = (ry - cy) / dy
             t2 = (ry + rh - cy) / dy
-            t_min = min(t1, t2)
-            t_max = max(t1, t2)
-            if t_max < 0:
-                continue
-            if t_min > t_hit:
-                continue
+            t_enter = max(t_enter, min(t1, t2))
+            t_exit = min(t_exit, max(t1, t2))
         
-        # Validate hit point is on rectangle boundary
-        if t_hit > 0 and t_hit < float('inf'):
-            hx = cx + t_hit * dx
-            hy = cy + t_hit * dy
-            if rx <= hx <= rx + rw and ry <= hy <= ry + rh:
-                if not t_values or t_hit < min(t_values):
+        # Check if ray intersects this obstacle
+        if t_enter <= t_exit and t_exit > 0:
+            t_hit = max(0, t_enter)
+            if t_hit > 0 and (not t_values or t_hit < min(t_values)):
+                # Validate hit point
+                hx = cx + t_hit * dx
+                hy = cy + t_hit * dy
+                if rx - 0.1 <= hx <= rx + rw + 0.1 and ry - 0.1 <= hy <= ry + rh + 0.1:
                     t_values.append(t_hit)
     
     if t_values:
