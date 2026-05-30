@@ -473,6 +473,8 @@ class GameEngine:
         self.projectile_speed = PROJECTILE_SPEED * speed_mult
         self.max_bounces = {"easy": 3, "medium": 4, "hard": 5}.get(difficulty, 3)
         self.max_projectiles = {"easy": 15, "medium": 18, "hard": 21}.get(difficulty, 15)
+        self.bounce_shrink = {"easy": 0.75, "medium": 0.8, "hard": 0.85}.get(difficulty, 0.8)
+        self.bounce_slowdown = {"easy": 0.84, "medium": 0.88, "hard": 0.92}.get(difficulty, 0.88)
         self.projectiles = []
         self.castles = self._init_castles()
         if human_players is None:
@@ -804,9 +806,9 @@ class GameEngine:
                 if DEBUG:
                     print(f"[DEATH] id:{p['id']} cause:max_wall_bounces owner:{COLOR_LETTERS[p['owner']]}")
             elif p["bounce_cooldown"] <= 0:
-                p["radius"] = max(2, int(p["radius"] * 0.8))
-                p["vx"] *= 0.88
-                p["vy"] *= 0.88
+                p["radius"] = max(2, int(p["radius"] * self.bounce_shrink))
+                p["vx"] *= self.bounce_slowdown
+                p["vy"] *= self.bounce_slowdown
                 p["bounce_cooldown"] = 15
 
     def _reflect_projectile(self, p):
