@@ -141,15 +141,22 @@ def _init_obstacles():
         obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
+    # X shape (diagonal cross) instead of + shape
+    # This prevents 90° bounces into adjacent castles
     for i in range(-2, 3):
-        obs.append({"rect": (cx + i * bs - bs // 2, cy - bs // 2, bs, bs), "zone": "center"})
+        obs.append({"rect": (cx + i * bs - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
+        obs.append({"rect": (cx + i * bs - bs // 2, cy - i * bs - bs // 2, bs, bs), "zone": "center"})
 
-    for i in range(-2, 3):
-        if i == 0:
-            continue
-        obs.append({"rect": (cx - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
+    # Remove duplicate center block (added twice in loop above)
+    seen = set()
+    unique_obs = []
+    for o in obs:
+        key = o["rect"]
+        if key not in seen:
+            seen.add(key)
+            unique_obs.append(o)
 
-    return obs
+    return unique_obs
 
 def _push_out_of_rect(p, rx, ry, rw, rh):
     cx = max(rx, min(p["x"], rx + rw))
