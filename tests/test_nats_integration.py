@@ -5,6 +5,7 @@ admin auth, bot lifecycle, and room lifecycle. A game server is started as a sub
 for tests that require it.
 """
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -62,7 +63,7 @@ def server_process():
         [sys.executable, "server.py", TEST_PASSWORD],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        cwd="/Users/ryon.sherman/Development/sandbox/rebound-game",
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
     time.sleep(2)
     if proc.poll() is not None:
