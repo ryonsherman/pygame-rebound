@@ -143,20 +143,26 @@ def _init_obstacles():
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
     # X shape (diagonal cross) - extended by 1 brick on each end
+    # Store as base positions relative to center for rotation
+    center_bases = []
     for i in range(-4, 5):
-        obs.append({"rect": (cx + i * bs - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
-        obs.append({"rect": (cx + i * bs - bs // 2, cy - i * bs - bs // 2, bs, bs), "zone": "center"})
+        dx = i * bs
+        dy = i * bs
+        center_bases.append({"offset": (dx, dy), "rect": (cx + dx - bs // 2, cy + dy - bs // 2, bs, bs), "zone": "center"})
+        dx = i * bs
+        dy = -i * bs
+        center_bases.append({"offset": (dx, dy), "rect": (cx + dx - bs // 2, cy + dy - bs // 2, bs, bs), "zone": "center"})
 
     # Remove duplicate center block (added twice in loop above)
     seen = set()
-    unique_obs = []
-    for o in obs:
-        key = o["rect"]
+    unique_bases = []
+    for o in center_bases:
+        key = o["offset"]
         if key not in seen:
             seen.add(key)
-            unique_obs.append(o)
+            unique_bases.append(o)
 
-    return unique_obs
+    return obs, unique_bases
 
 def _push_out_of_rect(p, rx, ry, rw, rh):
     cx = max(rx, min(p["x"], rx + rw))
@@ -496,16 +502,39 @@ class GameEngine:
         if human_players is None:
             human_players = [0]
         self.human_players = set(human_players)
-        self.obstacles = _init_obstacles()
-        # Pre-serialized obstacle list for get_state() — obstacles never change
-        self._obstacles_snapshot = [dict(o) for o in self.obstacles]
-        self.ai = [AIController(i, difficulty, self.obstacles) for i in range(4) if i not in self.human_players]
+        # Separate static (edge) and rotating (center) obstacles
+        self.edge_obstacles, self.center_obstacle_bases = _init_obstacles()
+        self.ai = [AIController(i, difficulty) for i in range(4) if i not in self.human_players]
+        self.center_rotation = 0.0  # Radians, rotates clockwise
+        self._update_obstacles()  # Calculate initial rotated positions (also updates ai.obstacles)
         self.difficulty = difficulty
         self.frame = 0
         self.game_over = False
         self.winner = None
         self.sound_events = []
         self._ball_id_counter = 0
+
+    def _update_obstacles(self):
+        """Update center obstacle positions based on rotation angle."""
+        ax, ay, aw, ah = ARENA_RECT
+        cx = ax + aw // 2
+        cy = ay + ah // 2
+        bs = BRICK_SIZE
+        # Rotate center obstacles
+        cos_a = math.cos(self.center_rotation)
+        sin_a = math.sin(self.center_rotation)
+        rotated = []
+        for base in self.center_obstacle_bases:
+            dx, dy = base["offset"]
+            # Rotate the offset
+            rx = dx * cos_a - dy * sin_a
+            ry = dx * sin_a + dy * cos_a
+            rotated.append({"rect": (cx + rx - bs // 2, cy + ry - bs // 2, bs, bs), "zone": "center"})
+        # Combine static edge obstacles with rotated center obstacles
+        self.obstacles = self.edge_obstacles + rotated
+        # Update AI's obstacle reference
+        for ai in self.ai:
+            ai.obstacles = self.obstacles
 
     def respawn_castle(self, owner):
         """Instantly respawn a castle with full health — used for menu background mode."""
@@ -596,6 +625,11 @@ class GameEngine:
             return
 
         self.frame += 1
+        # Rotate center obstacles slowly (full rotation every ~60 seconds at 60fps)
+        self.center_rotation += 0.0017
+        if self.center_rotation > 2 * math.pi:
+            self.center_rotation -= 2 * math.pi
+        self._update_obstacles()
 
         for c in self.castles:
             if not c["alive"]:
@@ -1057,7 +1091,7 @@ class GameEngine:
                 "color_idx": p["color_idx"],
                 "alive": p["alive"],
             } for p in self.projectiles],
-            "obstacles": self._obstacles_snapshot,
+            "obstacles": [dict(o) for o in self.obstacles],
             "game_over": self.game_over,
             "winner": self.winner,
             "sound_events": list(self.sound_events),
