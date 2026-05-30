@@ -136,14 +136,27 @@ class GameServer:
         self.pending_matches = []
         for msg, difficulty in matches:
             try:
-                gid = uuid.uuid4().hex[:8]
-                room = GameRoom(gid, difficulty, self.nc)
-                slot = room.assign_slot()
-                self.rooms[gid] = room
-                print(f"[MATCH] New room {gid} — first player (slot {slot})")
-                await msg.respond(json.dumps({
-                    "ok": True, "game_id": gid, "slot": slot,
-                }).encode())
+                # Try to fill an existing waiting room first
+                placed = False
+                for room in self.rooms.values():
+                    if room.status == "waiting" and room.difficulty == difficulty and room.open_slots:
+                        slot = room.assign_slot()
+                        print(f"[MATCH] Player → room {room.game_id} (slot {slot}, {len(room.players)}/4)")
+                        await msg.respond(json.dumps({
+                            "ok": True, "game_id": room.game_id, "slot": slot,
+                        }).encode())
+                        placed = True
+                        break
+
+                if not placed:
+                    gid = uuid.uuid4().hex[:8]
+                    room = GameRoom(gid, difficulty, self.nc)
+                    slot = room.assign_slot()
+                    self.rooms[gid] = room
+                    print(f"[MATCH] New room {gid} — first player (slot {slot})")
+                    await msg.respond(json.dumps({
+                        "ok": True, "game_id": gid, "slot": slot,
+                    }).encode())
             except Exception as e:
                 print(f"[MATCH] Setup error: {e}")
                 try:
@@ -155,16 +168,6 @@ class GameServer:
         try:
             data = json.loads(msg.data.decode())
             difficulty = data.get("difficulty", "medium")
-
-            for room in self.rooms.values():
-                if room.status == "waiting" and room.difficulty == difficulty and room.open_slots:
-                    slot = room.assign_slot()
-                    print(f"[MATCH] Player → room {room.game_id} (slot {slot}, {len(room.players)}/{4})")
-                    await msg.respond(json.dumps({
-                        "ok": True, "game_id": room.game_id, "slot": slot,
-                    }).encode())
-                    return
-
             self.pending_matches.append((msg, difficulty))
         except Exception as e:
             print(f"[MATCH] Error: {e}")
