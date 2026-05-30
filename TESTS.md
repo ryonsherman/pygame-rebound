@@ -145,6 +145,7 @@ Server-side room lifecycle (unit tests, no NATS needed):
 - **Room cleanup delay**: Finished room removed after 5 seconds
 - **Server stop mid-game**: Graceful shutdown
 - **Admin join open slot**: Direct assignment without kicking
+- **Admin ID tracking**: All admin handlers (_on_admin_stop, _on_admin_kick, _on_admin_join, _on_admin_kill, _on_admin_bots) extract and log admin_id; defaults to "unknown" when missing; admin_bots sets admin_created=True
 
 ### `test_nats_integration.py` — Live NATS Integration
 **Requires**: `make nats` + `make server` running.
@@ -222,3 +223,6 @@ Admin CLI logic:
 - **cmd_join**: Requires game ID argument
 - **cmd_spectate**: Subscribes to state subject
 - **Unknown command**: Shows error message
+- **Admin ID generation**: 6-char hex UUID format, uniqueness across sessions
+- **Admin ID in payloads**: Included in _signed output with/without password, preserves original fields
+- **Admin ID in commands**: Passed to games, kick, bots, join, check_game requests

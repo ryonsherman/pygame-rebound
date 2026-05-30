@@ -187,7 +187,7 @@ async def cmd_join(nc, game_id=None, password=None, admin_id=None):
     If game_id is None and only one active game exists, auto-join that game.
     """
     # Resolve game_id (auto-select if only one active game)
-    full_game_id, status = await _check_game(nc, game_id, password)
+    full_game_id, status = await _check_game(nc, game_id, password, admin_id)
     if full_game_id is None:
         if status == "ambiguous":
             print("  Error: Multiple games match. Use: join <game_id>")

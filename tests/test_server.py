@@ -260,3 +260,220 @@ class TestAdminJoinOpenSlot:
         assert 3 in room.players
         # Kicked notification published
         mock_nc.publish.assert_called()
+
+
+class TestAdminIdTracking:
+    """#104: Server extracts and logs admin_id from requests."""
+
+    @pytest.fixture
+    def mock_server(self, mock_nc):
+        """Create a server with mocked NATS connection."""
+        server = GameServer(password="testpass")
+        server.nc = mock_nc
+        return server
+
+    def _create_auth_msg(self, payload, password="testpass"):
+        """Helper to create an authenticated message."""
+        from src.nats_common import encode_msg, sign_request
+        signed = sign_request(payload, password)
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        return msg
+
+    @pytest.mark.asyncio
+    async def test_admin_stop_logs_admin_id(self, mock_server, mock_nc, capsys):
+        """#104: _on_admin_stop extracts and logs admin_id."""
+        msg = self._create_auth_msg({"admin_id": "stopadmin"})
+        await mock_server._on_admin_stop(msg)
+        
+        # Verify response
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        
+        # Verify log output includes admin_id
+        captured = capsys.readouterr()
+        assert "Admin stopadmin requested shutdown" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_stop_default_admin_id(self, mock_server, capsys):
+        """#104: When admin_id is missing, defaults to 'unknown'."""
+        from src.nats_common import encode_msg, sign_request
+        # Create payload without admin_id
+        signed = sign_request({}, "testpass")
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        
+        await mock_server._on_admin_stop(msg)
+        
+        captured = capsys.readouterr()
+        assert "Admin unknown requested shutdown" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_kick_logs_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_kick extracts and logs admin_id."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        msg = self._create_auth_msg({"game_id": "testgame", "slot": 0, "admin_id": "kickadmin"})
+        await mock_server._on_admin_kick(msg)
+        
+        # Verify response
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        
+        # Verify log output
+        captured = capsys.readouterr()
+        assert "Admin kickadmin kicked slot 0" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_kick_default_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_kick defaults to 'unknown' when admin_id missing."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        from src.nats_common import encode_msg, sign_request
+        signed = sign_request({"game_id": "testgame", "slot": 0}, "testpass")
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        
+        await mock_server._on_admin_kick(msg)
+        
+        captured = capsys.readouterr()
+        assert "Admin unknown kicked slot 0" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_join_logs_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_join extracts and logs admin_id."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        msg = self._create_auth_msg({"game_id": "testgame", "admin_id": "joinadmin"})
+        await mock_server._on_admin_join(msg)
+        
+        # Verify response
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        assert resp["slot"] == 1  # Next open slot
+        
+        # Verify log output
+        captured = capsys.readouterr()
+        assert "Admin joinadmin joined as slot 1" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_join_default_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_join defaults to 'unknown' when admin_id missing."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        from src.nats_common import encode_msg, sign_request
+        signed = sign_request({"game_id": "testgame"}, "testpass")
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        
+        await mock_server._on_admin_join(msg)
+        
+        captured = capsys.readouterr()
+        assert "Admin unknown joined as slot" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_kill_logs_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_kill extracts and logs admin_id."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        msg = self._create_auth_msg({"game_id": "testgame", "admin_id": "killadmin"})
+        await mock_server._on_admin_kill(msg)
+        
+        # Verify response
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        
+        # Verify log output
+        captured = capsys.readouterr()
+        assert "Killed by admin killadmin" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_kill_default_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_kill defaults to 'unknown' when admin_id missing."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        from src.nats_common import encode_msg, sign_request
+        signed = sign_request({"game_id": "testgame"}, "testpass")
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        
+        await mock_server._on_admin_kill(msg)
+        
+        captured = capsys.readouterr()
+        assert "Killed by admin unknown" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_bots_logs_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_bots extracts and logs admin_id."""
+        msg = self._create_auth_msg({"difficulty": "hard", "admin_id": "botsadmin"})
+        await mock_server._on_admin_bots(msg)
+        
+        # Verify response
+        resp = decode_msg(msg.respond.call_args[0][0])
+        assert resp["ok"]
+        assert "game_id" in resp
+        
+        # Verify log output
+        captured = capsys.readouterr()
+        game_id = resp["game_id"]
+        assert f"Created by admin botsadmin" in captured.out
+        assert "4 server-side AI bots" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_bots_default_admin_id(self, mock_server, capsys):
+        """#104: _on_admin_bots defaults to 'unknown' when admin_id missing."""
+        from src.nats_common import encode_msg, sign_request
+        signed = sign_request({"difficulty": "easy"}, "testpass")
+        msg = MagicMock()
+        msg.data = encode_msg(signed)
+        msg.respond = AsyncMock()
+        
+        await mock_server._on_admin_bots(msg)
+        
+        captured = capsys.readouterr()
+        assert "Created by admin unknown" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_admin_bots_creates_admin_created_room(self, mock_server):
+        """#104: _on_admin_bots sets admin_created=True on the room."""
+        msg = self._create_auth_msg({"difficulty": "medium", "admin_id": "testadmin"})
+        await mock_server._on_admin_bots(msg)
+        
+        resp = decode_msg(msg.respond.call_args[0][0])
+        game_id = resp["game_id"]
+        room = mock_server.rooms[game_id]
+        assert room.admin_created is True
+        assert len(room.players) == 4  # All 4 slots filled
+
+    @pytest.mark.asyncio
+    async def test_admin_join_replaces_player_logs_admin_id(self, mock_server, capsys):
+        """#104: When admin join replaces a player, admin_id is logged."""
+        room = GameRoom("testgame", "medium", mock_server.nc)
+        # Fill all slots
+        for _ in range(4):
+            room.assign_slot(bot=True)
+        mock_server.rooms = {"testgame": room}
+        
+        msg = self._create_auth_msg({"game_id": "testgame", "admin_id": "replaceadmin"})
+        await mock_server._on_admin_join(msg)
+        
+        captured = capsys.readouterr()
+        assert "Replaced slot 3 for admin replaceadmin join" in captured.out
+        assert "Admin replaceadmin joined as slot 3" in captured.out
