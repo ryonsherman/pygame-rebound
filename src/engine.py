@@ -143,7 +143,7 @@ def _init_obstacles():
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
     # X shape (diagonal cross) - extended by 1 brick on each end
-    for i in range(-3, 4):
+    for i in range(-4, 5):
         obs.append({"rect": (cx + i * bs - bs // 2, cy + i * bs - bs // 2, bs, bs), "zone": "center"})
         obs.append({"rect": (cx + i * bs - bs // 2, cy - i * bs - bs // 2, bs, bs), "zone": "center"})
 
