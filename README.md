@@ -168,6 +168,10 @@ rebound-game/
     └── test_difficulty_pacing.py
 ```
 
+## Disclaimer
+
+**Personal Project Notice:** This is a personal hobby project created for learning and experimentation purposes only. The name "Rebound" and game concept are used without claim to any existing trademarks or copyrights. No infringement is intended. If you hold rights to similar concepts and have concerns, please reach out via GitHub issues rather than legal action.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
