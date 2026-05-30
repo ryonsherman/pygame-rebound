@@ -198,9 +198,11 @@ class TestServerStopMidGame:
         """#41: Server drain called on stop."""
         server = GameServer()
         server.nc = mock_nc
-        # Simulate admin stop handler
+        server.password = "testpass"
         msg = MagicMock()
-        msg.data = encode_msg({})
+        from src.nats_common import encode_msg, sign_request
+        payload = sign_request({}, "testpass")
+        msg.data = encode_msg(payload)
         msg.respond = AsyncMock()
         with patch("asyncio.get_event_loop") as mock_loop:
             mock_loop.return_value.stop = MagicMock()
@@ -215,6 +217,7 @@ class TestAdminJoinOpenSlot:
     async def test_join_open_slot_no_kick(self, mock_nc):
         """#42: Admin join with available slot doesn't kick anyone."""
         server = GameServer()
+        server.password = "testpass"
         server.nc = mock_nc
         room = GameRoom("test", "medium", mock_nc)
         room.assign_slot(bot=True)  # slot 0
@@ -222,7 +225,9 @@ class TestAdminJoinOpenSlot:
         # slots 2, 3 open
         server.rooms = {"test": room}
         msg = MagicMock()
-        msg.data = encode_msg({"game_id": "test"})
+        from src.nats_common import encode_msg, sign_request
+        payload = sign_request({"game_id": "test"}, "testpass")
+        msg.data = encode_msg(payload)
         msg.respond = AsyncMock()
         await server._on_admin_join(msg)
         resp = decode_msg(msg.respond.call_args[0][0])
@@ -233,6 +238,7 @@ class TestAdminJoinOpenSlot:
     async def test_join_full_room_kicks_highest_slot(self, mock_nc):
         """#42b: Admin join with full room kicks highest-numbered slot."""
         server = GameServer()
+        server.password = "testpass"
         server.nc = mock_nc
         room = GameRoom("test", "medium", mock_nc)
         room.assign_slot(bot=True)  # slot 0
@@ -242,7 +248,9 @@ class TestAdminJoinOpenSlot:
         assert not room.open_slots
         server.rooms = {"test": room}
         msg = MagicMock()
-        msg.data = encode_msg({"game_id": "test"})
+        from src.nats_common import encode_msg, sign_request
+        payload = sign_request({"game_id": "test"}, "testpass")
+        msg.data = encode_msg(payload)
         msg.respond = AsyncMock()
         await server._on_admin_join(msg)
         resp = decode_msg(msg.respond.call_args[0][0])

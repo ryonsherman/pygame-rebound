@@ -8,6 +8,7 @@ SUBJECT_ADMIN_STOP = f"{NATS_PREFIX}.admin.stop"
 SUBJECT_ADMIN_KICK = f"{NATS_PREFIX}.admin.kick"
 SUBJECT_ADMIN_JOIN = f"{NATS_PREFIX}.admin.join"
 SUBJECT_ADMIN_KILL = f"{NATS_PREFIX}.admin.kill"
+SUBJECT_ADMIN_BOTS = f"{NATS_PREFIX}.admin.bots"
 
 # Auth: HMAC-SHA256 with time-based nonce (±5s tolerance)
 AUTH_TOLERANCE = 5

@@ -16,7 +16,7 @@ import nats
 from src.nats_common import (
     NATS_SERVER, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
     SUBJECT_ADMIN_LIST, SUBJECT_ADMIN_STOP, SUBJECT_ADMIN_KICK,
-    SUBJECT_ADMIN_JOIN, SUBJECT_MATCH, sub_game, encode_msg, decode_msg, decode_state,
+    SUBJECT_ADMIN_JOIN, SUBJECT_ADMIN_BOTS, SUBJECT_MATCH, sub_game, encode_msg, decode_msg, decode_state,
     sign_request,
 )
 
@@ -293,20 +293,18 @@ async def cmd_join(nc, game_id=None, password=None):
     print(f"  Left game {full_game_id}.")
 
 
-async def cmd_bots(nc, difficulty="medium"):
-    from src.bot_client import BotClient
-    print(f"  Spawning 4 bots ({difficulty})...")
-    bots = [BotClient(difficulty=difficulty, name=f"bot-{i}", admin=True) for i in range(4)]
-    for bot in bots:
-        await bot.connect_and_match()
-
-    game_id = bots[0].game_id
-    print(f"  All bots joined game {game_id}")
-    print(f"  Bots running — use 'spectate {game_id}' to watch")
-
-    # Run bots concurrently in background tasks
-    tasks = [asyncio.create_task(bot.run()) for bot in bots]
-    return game_id, tasks
+async def cmd_bots(nc, difficulty="medium", password=None):
+    """Create a room with 4 server-side AI players (no client processes needed)."""
+    print(f"  Creating room with 4 server-side AI bots ({difficulty})...")
+    msg = await nc.request(SUBJECT_ADMIN_BOTS, _signed({"difficulty": difficulty}, password), timeout=REQUEST_TIMEOUT)
+    data = decode_msg(msg.data)
+    if not data.get("ok"):
+        print(f"  Error: {data.get('error')}")
+        return None, []
+    game_id = data.get("game_id")
+    print(f"  Room {game_id} created with 4 AI bots")
+    print(f"  Use 'spectate {game_id}' to watch or 'kill {game_id}' to stop")
+    return game_id, []
 
 
 async def cmd_spectate(nc, game_id=None, password=None):
@@ -470,7 +468,7 @@ async def main():
                     print(f"  Bot game already running: {last_game_id}")
                 else:
                     diff = parts[1] if len(parts) > 1 else "medium"
-                    game_id, tasks = await cmd_bots(nc, diff)
+                    game_id, tasks = await cmd_bots(nc, diff, password)
                     last_game_id = game_id
                     bot_tasks.extend(tasks)
             elif cmd == "join":

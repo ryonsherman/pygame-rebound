@@ -108,21 +108,24 @@ class TestCheckGame:
 
 
 class TestCmdBots:
-    """#97: cmd_bots spawns bots."""
+    """#97: cmd_bots creates server-side AI room."""
 
     @pytest.mark.asyncio
     async def test_bots_spawn_4(self):
-        """#97: cmd_bots creates 4 bot clients."""
+        """#97: cmd_bots requests server to create room with 4 AI bots."""
         from admin import cmd_bots
-        with patch("src.bot_client.BotClient") as MockBot:
-            mock_bot = MagicMock()
-            mock_bot.connect_and_match = AsyncMock()
-            mock_bot.game_id = "test-game-123"
-            mock_bot.run = AsyncMock()
-            MockBot.return_value = mock_bot
-            game_id, tasks = await cmd_bots(MagicMock(), "medium")
-            assert MockBot.call_count == 4
-            assert game_id == "test-game-123"
+        from src.nats_common import SUBJECT_ADMIN_BOTS, encode_msg, decode_msg
+        mock_nc = MagicMock()
+        response_data = {"ok": True, "game_id": "test-game-123"}
+        mock_nc.request = AsyncMock(return_value=MagicMock(data=encode_msg(response_data)))
+        game_id, tasks = await cmd_bots(mock_nc, "medium", None)
+        assert game_id == "test-game-123"
+        assert tasks == []
+        mock_nc.request.assert_called_once()
+        call_args = mock_nc.request.call_args
+        assert call_args[0][0] == SUBJECT_ADMIN_BOTS
+        payload = decode_msg(call_args[0][1])
+        assert payload["difficulty"] == "medium"
 
 
 class TestCmdJoinLifecycle:

@@ -136,6 +136,7 @@ class GameServer:
         await self.nc.subscribe(SUBJECT_ADMIN_KICK, cb=self._on_admin_kick)
         await self.nc.subscribe(SUBJECT_ADMIN_JOIN, cb=self._on_admin_join)
         await self.nc.subscribe(SUBJECT_ADMIN_KILL, cb=self._on_admin_kill)
+        await self.nc.subscribe(SUBJECT_ADMIN_BOTS, cb=self._on_admin_bots)
         await self.nc.subscribe(f"{NATS_PREFIX}.game.*.input.>", cb=self._on_input)
         await self.nc.subscribe(f"{NATS_PREFIX}.game.*.leave", cb=self._on_leave)
         print("[SERVER] Matchmaking active — waiting for players...")
@@ -350,6 +351,31 @@ class GameServer:
             del self.rooms[game_id]
             await msg.respond(encode_msg({"ok": True, "game_id": game_id}))
             print(f"[ROOM {game_id}] Killed by admin")
+        except Exception as e:
+            await msg.respond(encode_msg({"ok": False, "error": str(e)}))
+
+    async def _on_admin_bots(self, msg):
+        """Create a room with 4 server-side AI players (no client processes needed)."""
+        data = self._check_auth(msg)
+        if data is None:
+            await msg.respond(encode_msg({"ok": False, "error": "Unauthorized"}))
+            return
+        try:
+            difficulty = data.get("difficulty", "medium")
+            if difficulty not in ("easy", "medium", "hard"):
+                difficulty = "medium"
+            
+            gid = uuid.uuid4().hex[:8]
+            room = GameRoom(gid, difficulty, self.nc)
+            room.admin_created = True
+            
+            # Assign all 4 slots as "bot" slots (no real players)
+            for slot in range(4):
+                room.assign_slot(bot=True)
+            
+            self.rooms[gid] = room
+            await msg.respond(encode_msg({"ok": True, "game_id": gid}))
+            print(f"[ROOM {gid}] Created with 4 server-side AI bots ({difficulty})")
         except Exception as e:
             await msg.respond(encode_msg({"ok": False, "error": str(e)}))
 
