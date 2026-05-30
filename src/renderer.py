@@ -45,6 +45,9 @@ def draw_game(screen, state, my_slot=None, aim_mode="multiplayer"):
         for c in state["castles"]:
             if c["alive"]:
                 draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False)
+    elif aim_mode == "spectate_no_lines":
+        # No aim lines
+        pass
     elif aim_mode == "multiplayer":
         # Show only own line (medium style, clamped)
         if my_slot is not None:
@@ -131,6 +134,9 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer"):
         for c in engine.castles:
             if c["alive"]:
                 draw_aim_line(screen, c, "medium", hit_objects, clamp_to_quadrant=False)
+    elif aim_mode == "spectate_no_lines":
+        # No aim lines
+        pass
     elif aim_mode == "multiplayer":
         # Show only own line (medium style, clamped)
         if my_slot is not None:

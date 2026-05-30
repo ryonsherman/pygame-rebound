@@ -159,6 +159,7 @@ class App:
         self.waiting_deadline = None
         self.waiting_players = 1
         self.difficulty = "medium"  # Default for online mode
+        self.show_aim_lines = True  # For spectate mode
 
     def run(self):
         while True:
@@ -191,6 +192,8 @@ class App:
                     continue
             if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
                 self.muted = not self.muted
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_t and self.spectate and self.state == "remote_game":
+                self.show_aim_lines = not self.show_aim_lines
 
             if self.state == "game":
                 self.game.handle_event(event)
@@ -335,7 +338,11 @@ class App:
             if self.latest_state:
                 if not self.muted:
                     play_sound_events(self.latest_state)
-                draw_game(self.screen, self.latest_state, my_slot=self.nats.slot, difficulty=self.difficulty)
+                if self.spectate:
+                    aim_mode = "spectate" if self.show_aim_lines else "spectate_no_lines"
+                    draw_game(self.screen, self.latest_state, my_slot=self.nats.slot, aim_mode=aim_mode)
+                else:
+                    draw_game(self.screen, self.latest_state, my_slot=self.nats.slot, difficulty=self.difficulty)
                 if self.latest_state.get("game_over"):
                     remaining = max(0, 30 - self.game_over_timer // FPS)
                     hint = _get_font(24).render(f"Returning to menu in {remaining}s — Press Q to return now", True, (120, 120, 140))

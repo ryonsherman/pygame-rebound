@@ -20,10 +20,13 @@ class Game:
         self.engine = GameEngine(difficulty=difficulty, human_players=human_players)
         self.prev_mouse_down = False
         self.muted = True
+        self.show_aim_lines = spectate  # On by default in spectate mode
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
             self.muted = not self.muted
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_t and self.spectate:
+            self.show_aim_lines = not self.show_aim_lines
 
     def update(self, dt):
         if not self.spectate:
@@ -49,12 +52,12 @@ class Game:
             play_sound_events({"sound_events": self.engine.sound_events})
         # Render directly from engine — avoids get_state() copy every frame
         my_slot = None if self.spectate else 0
-        aim_mode = "spectate" if self.spectate else "single_player"
+        if self.spectate and self.show_aim_lines:
+            aim_mode = "spectate"
+        elif self.spectate:
+            aim_mode = "spectate_no_lines"
+        else:
+            aim_mode = "single_player"
         draw_game_direct(screen, self.engine, my_slot=my_slot, aim_mode=aim_mode)
         if self.muted:
             screen.blit(_get_muted_surface(), (10, 10))
-        if self.spectate and self.engine.game_over:
-            font = _get_font(48)
-            colors = ["Red", "Blue", "Green", "Yellow"]
-            txt = font.render(f"{colors[self.engine.winner]} Wins!", True, (255, 255, 255))
-            screen.blit(txt, txt.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2)))
