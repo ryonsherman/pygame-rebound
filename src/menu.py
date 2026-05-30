@@ -78,6 +78,11 @@ class Menu:
         # Draw background game (no aim lines)
         draw_game_direct(screen, self.bg_engine, my_slot=None, aim_mode="spectate_no_lines")
         
+        # Draw dark translucent overlay to make menu stand out
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 140))  # ~55% transparent black
+        screen.blit(overlay, (0, 0))
+        
         # Draw menu UI overlay
         title_font = _get_font(80)
         font = _get_font(44)
