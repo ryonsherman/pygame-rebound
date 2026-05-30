@@ -142,26 +142,17 @@ def _init_obstacles():
         obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
         obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
 
-    # + shape (vertical and horizontal cross) - extended by 1 brick on each end
-    # Store as base positions relative to center for rotation
-    center_bases = []
-    # Vertical bar
-    for i in range(-4, 5):
-        center_bases.append({"offset": (0, i * bs), "zone": "center"})
-    # Horizontal bar
-    for i in range(-4, 5):
-        center_bases.append({"offset": (i * bs, 0), "zone": "center"})
+    # + shape as two bars (for solid rotation)
+    # Each bar is 9 blocks long, 1 block wide
+    bar_length = 9 * bs
+    bar_width = bs
+    # Store as two bars: vertical and horizontal, centered at origin for rotation
+    center_bars = [
+        {"size": (bar_width, bar_length), "offset": (0, 0)},  # vertical bar
+        {"size": (bar_length, bar_width), "offset": (0, 0)},  # horizontal bar
+    ]
 
-    # Remove duplicate center block
-    seen = set()
-    unique_bases = []
-    for o in center_bases:
-        key = o["offset"]
-        if key not in seen:
-            seen.add(key)
-            unique_bases.append(o)
-
-    return obs, unique_bases
+    return obs, center_bars
 
 def _push_out_of_rect(p, rx, ry, rw, rh):
     cx = max(rx, min(p["x"], rx + rw))
@@ -266,9 +257,22 @@ class AIController:
 
     def _line_blocked(self, x1, y1, x2, y2, exclude=None):
         for obs in self.obstacles:
-            if exclude is not None and obs["rect"] == exclude:
+            # Get rect from obstacle (either direct or from corners bounding box)
+            if "rect" in obs:
+                rect = obs["rect"]
+            elif "corners" in obs:
+                # Compute bounding box from corners
+                corners = obs["corners"]
+                min_x = min(c[0] for c in corners)
+                max_x = max(c[0] for c in corners)
+                min_y = min(c[1] for c in corners)
+                max_y = max(c[1] for c in corners)
+                rect = (min_x, min_y, max_x - min_x, max_y - min_y)
+            else:
                 continue
-            if self._line_intersects_rect(x1, y1, x2, y2, obs["rect"]):
+            if exclude is not None and rect == exclude:
+                continue
+            if self._line_intersects_rect(x1, y1, x2, y2, rect):
                 return True
         return False
 
@@ -346,7 +350,19 @@ class AIController:
         for obs in self.obstacles:
             if obs.get("zone") != "center":
                 continue
-            result = self._eval_brick_bounce(mx, my, tx, ty, *obs["rect"])
+            # Get rect from obstacle (either direct or from corners bounding box)
+            if "rect" in obs:
+                rect = obs["rect"]
+            elif "corners" in obs:
+                corners = obs["corners"]
+                min_x = min(c[0] for c in corners)
+                max_x = max(c[0] for c in corners)
+                min_y = min(c[1] for c in corners)
+                max_y = max(c[1] for c in corners)
+                rect = (min_x, min_y, max_x - min_x, max_y - min_y)
+            else:
+                continue
+            result = self._eval_brick_bounce(mx, my, tx, ty, *rect)
             if result:
                 candidates.append((*result, 1))
 
@@ -518,22 +534,38 @@ class GameEngine:
         ax, ay, aw, ah = ARENA_RECT
         cx = ax + aw // 2
         cy = ay + ah // 2
-        bs = BRICK_SIZE
-        # Rotate center obstacles
+        # Rotate center bars
         cos_a = math.cos(self.center_rotation)
         sin_a = math.sin(self.center_rotation)
         rotated = []
-        for base in self.center_obstacle_bases:
-            dx, dy = base["offset"]
-            # Rotate the offset
-            rx = dx * cos_a - dy * sin_a
-            ry = dx * sin_a + dy * cos_a
-            rotated.append({"rect": (cx + rx - bs // 2, cy + ry - bs // 2, bs, bs), "zone": "center"})
+        for bar in self.center_obstacle_bases:
+            w, h = bar["size"]
+            # Get 4 corners of the bar (centered at origin)
+            corners = [
+                (-w/2, -h/2), (w/2, -h/2),
+                (w/2, h/2), (-w/2, h/2)
+            ]
+            # Rotate each corner
+            rotated_corners = []
+            for dx, dy in corners:
+                rx = dx * cos_a - dy * sin_a
+                ry = dx * sin_a + dy * cos_a
+                rotated_corners.append((cx + rx, cy + ry))
+            rotated.append({"corners": rotated_corners, "zone": "center"})
         # Combine static edge obstacles with rotated center obstacles
         self.obstacles = self.edge_obstacles + rotated
-        # Update AI's obstacle reference
+        # Update AI's obstacle reference (AI uses rect-based collision, so we need to provide bounding rects)
+        # For AI pathfinding, use bounding box of rotated bars
+        ai_obstacles = list(self.edge_obstacles)
+        for bar_obs in rotated:
+            corners = bar_obs["corners"]
+            min_x = min(c[0] for c in corners)
+            max_x = max(c[0] for c in corners)
+            min_y = min(c[1] for c in corners)
+            max_y = max(c[1] for c in corners)
+            ai_obstacles.append({"rect": (min_x, min_y, max_x - min_x, max_y - min_y), "zone": "center"})
         for ai in self.ai:
-            ai.obstacles = self.obstacles
+            ai.obstacles = ai_obstacles
 
     def respawn_castle(self, owner):
         """Instantly respawn a castle with full health — used for menu background mode."""
@@ -812,7 +844,18 @@ class GameEngine:
             for _ in range(5):
                 any_hit = False
                 for obs in self.obstacles:
-                    rx, ry, rw, rh = obs["rect"]
+                    # Get rect from obstacle (either direct or from corners bounding box)
+                    if "rect" in obs:
+                        rx, ry, rw, rh = obs["rect"]
+                    elif "corners" in obs:
+                        corners = obs["corners"]
+                        min_x = min(c[0] for c in corners)
+                        max_x = max(c[0] for c in corners)
+                        min_y = min(c[1] for c in corners)
+                        max_y = max(c[1] for c in corners)
+                        rx, ry, rw, rh = min_x, min_y, max_x - min_x, max_y - min_y
+                    else:
+                        continue
                     cx = max(rx, min(p["x"], rx + rw))
                     cy = max(ry, min(p["y"], ry + rh))
                     dx = p["x"] - cx
@@ -1090,7 +1133,11 @@ class GameEngine:
                 "color_idx": p["color_idx"],
                 "alive": p["alive"],
             } for p in self.projectiles],
-            "obstacles": [dict(o) for o in self.obstacles],
+            "obstacles": [
+                {"rect": o["rect"], "zone": o["zone"]} if "rect" in o
+                else {"corners": [(round(x, 1), round(y, 1)) for x, y in o["corners"]], "zone": o["zone"]}
+                for o in self.obstacles
+            ],
             "game_over": self.game_over,
             "winner": self.winner,
             "sound_events": list(self.sound_events),

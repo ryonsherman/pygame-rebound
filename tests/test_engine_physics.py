@@ -74,7 +74,17 @@ class TestObstacleCollision:
         for p in eng.projectiles:
             r = p["radius"]
             for obs in eng.obstacles:
-                rx, ry, rw, rh = obs["rect"]
+                if "rect" in obs:
+                    rx, ry, rw, rh = obs["rect"]
+                elif "corners" in obs:
+                    corners = obs["corners"]
+                    min_x = min(c[0] for c in corners)
+                    max_x = max(c[0] for c in corners)
+                    min_y = min(c[1] for c in corners)
+                    max_y = max(c[1] for c in corners)
+                    rx, ry, rw, rh = min_x, min_y, max_x - min_x, max_y - min_y
+                else:
+                    continue
                 cx = max(rx, min(p["x"], rx + rw))
                 cy = max(ry, min(p["y"], ry + rh))
                 dx = p["x"] - cx

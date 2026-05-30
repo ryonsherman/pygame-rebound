@@ -90,8 +90,14 @@ def draw_game_direct(screen, engine, my_slot=None, aim_mode="multiplayer", show_
     pygame.draw.line(screen, ARENA_WALL_COLOR, (cx, ay + 1), (cx, ay + ah - 1), 1)
     pygame.draw.line(screen, ARENA_WALL_COLOR, (ax + 1, cy), (ax + aw - 1, cy), 1)
     for o in engine.obstacles:
-        pygame.draw.rect(screen, (100, 100, 110), o["rect"])
-        pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
+        if "rect" in o:
+            # Static edge obstacles
+            pygame.draw.rect(screen, (100, 100, 110), o["rect"])
+            pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
+        elif "corners" in o:
+            # Rotated center bars - draw as filled polygon
+            pygame.draw.polygon(screen, (100, 100, 110), o["corners"])
+            pygame.draw.polygon(screen, (0, 0, 0), o["corners"], 2)
 
     if show_hud:
         draw_title(screen)
@@ -190,8 +196,12 @@ def draw_arena(screen, state):
     pygame.draw.line(screen, ARENA_WALL_COLOR, (cx, ay + 1), (cx, ay + ah - 1), 1)
     pygame.draw.line(screen, ARENA_WALL_COLOR, (ax + 1, cy), (ax + aw - 1, cy), 1)
     for o in state.get("obstacles", []):
-        pygame.draw.rect(screen, (100, 100, 110), o["rect"])
-        pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
+        if "rect" in o:
+            pygame.draw.rect(screen, (100, 100, 110), o["rect"])
+            pygame.draw.rect(screen, (0, 0, 0), o["rect"], 1)
+        elif "corners" in o:
+            pygame.draw.polygon(screen, (100, 100, 110), o["corners"])
+            pygame.draw.polygon(screen, (0, 0, 0), o["corners"], 2)
 
 def draw_title(screen):
     font = _get_font(30)
@@ -371,7 +381,18 @@ def _ray_cast_to_boundary(cx, cy, angle, owner, obstacles, clamp_to_quadrant):
     
     # Check collision with obstacles (barricades and blockades)
     for obs in obstacles:
-        rx, ry, rw, rh = obs["rect"]
+        # Get rect from obstacle (either direct or from corners bounding box)
+        if "rect" in obs:
+            rx, ry, rw, rh = obs["rect"]
+        elif "corners" in obs:
+            corners = obs["corners"]
+            min_x = min(c[0] for c in corners)
+            max_x = max(c[0] for c in corners)
+            min_y = min(c[1] for c in corners)
+            max_y = max(c[1] for c in corners)
+            rx, ry, rw, rh = min_x, min_y, max_x - min_x, max_y - min_y
+        else:
+            continue
         # Proper ray-AABB intersection using slab method
         t_enter = 0.0
         t_exit = float('inf')
