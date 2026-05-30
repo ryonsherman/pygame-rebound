@@ -277,12 +277,12 @@ async def cmd_bots(nc, difficulty="medium"):
     return game_id, tasks
 
 
-async def cmd_spectate(nc, game_id=None):
+async def cmd_spectate(nc, game_id=None, password=None):
     """Subscribe to state and render in pygame.
     If game_id is None and only one active game exists, auto-spectate that game.
     """
     # Resolve game_id (auto-select if only one active game)
-    full_game_id, status = await _check_game(nc, game_id)
+    full_game_id, status = await _check_game(nc, game_id, password)
     if full_game_id is None:
         if status == "ambiguous":
             print("  Error: Multiple games match. Use: spectate <game_id>")
@@ -446,7 +446,7 @@ async def main():
                 await cmd_join(nc, gid_input, password)
             elif cmd == "spectate":
                 gid_input = parts[1] if len(parts) > 1 else None
-                await cmd_spectate(nc, gid_input)
+                await cmd_spectate(nc, gid_input, password)
             else:
                 print(f"  Unknown command: {cmd}")
                 print("  Type 'help' for available commands")
