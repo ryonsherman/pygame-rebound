@@ -135,21 +135,26 @@ def _init_obstacles():
     m = 3
     obs = []
 
-    # Edge barriers - extended by 1 brick on each end
-    for i in range(5):
-        obs.append({"rect": (cx - bs // 2, ay + m + i * bs, bs, bs), "zone": "edge"})
-        obs.append({"rect": (cx - bs // 2, ay + ah - m - (i + 1) * bs, bs, bs), "zone": "edge"})
-        obs.append({"rect": (ax + m + i * bs, cy - bs // 2, bs, bs), "zone": "edge"})
-        obs.append({"rect": (ax + aw - m - (i + 1) * bs, cy - bs // 2, bs, bs), "zone": "edge"})
+    # Edge barriers as solid bars (5 blocks = 70px long, 14px wide)
+    bar_length = 5 * bs  # 70px
+    bar_width = bs  # 14px
+    # Top edge barrier
+    obs.append({"rect": (cx - bar_width // 2, ay + m, bar_width, bar_length), "zone": "edge"})
+    # Bottom edge barrier
+    obs.append({"rect": (cx - bar_width // 2, ay + ah - m - bar_length, bar_width, bar_length), "zone": "edge"})
+    # Left edge barrier
+    obs.append({"rect": (ax + m, cy - bar_width // 2, bar_length, bar_width), "zone": "edge"})
+    # Right edge barrier
+    obs.append({"rect": (ax + aw - m - bar_length, cy - bar_width // 2, bar_length, bar_width), "zone": "edge"})
 
     # + shape as two bars (for solid rotation)
     # Each bar is 9 blocks long, 1 block wide
-    bar_length = 9 * bs
-    bar_width = bs
+    center_bar_length = 9 * bs
+    center_bar_width = bs
     # Store as two bars: vertical and horizontal, centered at origin for rotation
     center_bars = [
-        {"size": (bar_width, bar_length), "offset": (0, 0)},  # vertical bar
-        {"size": (bar_length, bar_width), "offset": (0, 0)},  # horizontal bar
+        {"size": (center_bar_width, center_bar_length), "offset": (0, 0)},  # vertical bar
+        {"size": (center_bar_length, center_bar_width), "offset": (0, 0)},  # horizontal bar
     ]
 
     return obs, center_bars
