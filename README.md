@@ -91,6 +91,8 @@ Select difficulty on the menu screen, then press Enter or click START.
 | Ball slowdown per bounce | ×0.84 | ×0.88 | ×0.92 |
 | AI fire rate (frames) | 99–198 | 60–150 | 27–81 |
 | AI aim spread | 60° | 35° | 15° |
+| AI bounce chance | 10% | 25% | 40% |
+| AI obstacle awareness | 0.3 | 0.8 | 1.0 |
 | AI rotation speed | 0.02 rad/f | 0.04 rad/f | 0.06 rad/f |
 | AI sling threshold | 0.05 rad | 0.12 rad | 0.20 rad |
 | AI shield detection | 100px | 140px | 180px |
@@ -103,9 +105,11 @@ rebound-game/
 ├── game.py              # Entry point — play the game
 ├── server.py            # Multiplayer server entry point
 ├── config.py            # All gameplay constants
-├── Makefile             # make game / make server
+├── Makefile             # make game / make server / make nats
+├── TESTS.md             # Full test plan
 ├── sounds/              # .ogg sound files + pitch-shifted variants
 ├── src/
+│   ├── __init__.py
 │   ├── engine.py        # Pure game logic — no Pygame, dict-based state
 │   ├── game_client.py   # Thin client bridging input/rendering to engine
 │   ├── menu.py          # Difficulty/mode selection screen
@@ -113,9 +117,10 @@ rebound-game/
 │   ├── sounds.py        # Sound loader/player — event-driven playback
 │   └── nats_common.py   # NATS messaging helpers for multiplayer
 └── tests/
-    ├── test_wall_escape.py   # Physics tunneling/overlap tests
-    ├── test_obstacles.py     # Obstacle collision analysis
-    └── test_nats.py          # Multiplayer messaging tests
+    ├── test_wall_escape.py       # Physics tunneling/overlap tests
+    ├── test_obstacles.py         # Obstacle collision analysis
+    ├── test_nats.py              # Multiplayer messaging tests
+    └── test_difficulty_pacing.py # Headless match duration comparison
 ```
 
 ## Architecture
@@ -131,9 +136,16 @@ The engine processes input via `handle_input({player_idx: {...}})` and advances 
 
 ### Multiplayer (NATS)
 
-The multiplayer server (`server.py`) communicates via [NATS](https://nats.io/) pub/sub messaging. Game state is serialized as base64-encoded JSON — this obscures payloads from casual inspection on shared NATS servers without the overhead of encryption. The server broadcasts state at 20Hz and accepts player input at 60Hz.
+The multiplayer server (`server.py`) communicates via [NATS](https://nats.io/) pub/sub messaging. Game state is serialized as base64-encoded JSON — this obscures payloads from casual inspection on shared NATS servers without the overhead of encryption.
 
-- `make nats` — Start a local NATS server (localhost only)
+- Server ticks at 60Hz, broadcasts state at 20Hz, status at 2Hz during lobby
+- 120-second lobby countdown before game auto-starts (waiting for players to join)
+- Players are placed into rooms (up to 4 per room); empty slots are filled by AI
+- Once a match starts, no new players can join
+- Disconnected players' slots revert to AI control
+
+Commands:
+- `make nats` — Start a local NATS server (localhost only, verbose logging)
 - `make server` — Start the game server (connects to NATS)
 - `NATS_URL` in `config.py` controls the NATS connection address
 
@@ -172,13 +184,19 @@ print(f"Winner: P{e.winner}")
 ### Running Tests
 
 ```bash
-python tests/test_wall_escape.py
-python tests/test_obstacles.py
+python tests/test_wall_escape.py        # Physics tunneling tests
+python tests/test_obstacles.py          # Obstacle collision tests
+python tests/test_nats.py               # Multiplayer messaging (requires NATS running)
+python tests/test_difficulty_pacing.py  # Match duration comparison (slow, ~10 trials)
 ```
 
 ### Debug Mode
 
-Set `engine.DEBUG = True` to enable structured physics tracing (`[WALL]`, `[OBS]`, `[BLK]`, `[FIRE]`, `[DEATH]` lines in stdout).
+Set `REBOUND_DEBUG=1` environment variable to enable structured tracing in stdout. Output includes `[WALL]`, `[OBS]`, `[BLK]`, `[FIRE]`, `[DEATH]` lines with player tags (`R` for human, `G:AI` for bots).
+
+```bash
+REBOUND_DEBUG=1 make game
+```
 
 ### Adding Features
 
@@ -191,6 +209,8 @@ Set `engine.DEBUG = True` to enable structured physics tracing (`[WALL]`, `[OBS]
 
 - Python 3.10+
 - Pygame 2.6+
+- [nats-py](https://github.com/nats-io/nats.py) (for multiplayer)
+- [nats-server](https://nats.io/) (for hosting, `brew install nats-server`)
 
 ## License
 
