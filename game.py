@@ -158,6 +158,7 @@ class App:
         self.game_over_timer = 0
         self.waiting_deadline = None
         self.waiting_players = 1
+        self.difficulty = "medium"  # Default for online mode
 
     def run(self):
         while True:
@@ -334,7 +335,7 @@ class App:
             if self.latest_state:
                 if not self.muted:
                     play_sound_events(self.latest_state)
-                draw_game(self.screen, self.latest_state, my_slot=self.nats.slot)
+                draw_game(self.screen, self.latest_state, my_slot=self.nats.slot, difficulty=self.difficulty)
                 if self.latest_state.get("game_over"):
                     remaining = max(0, 30 - self.game_over_timer // FPS)
                     hint = _get_font(24).render(f"Returning to menu in {remaining}s — Press Q to return now", True, (120, 120, 140))

@@ -8,7 +8,7 @@ from config import (
     BG_COLOR, ARENA_COLOR, ARENA_WALL_COLOR,
 )
 
-def draw_game(screen, state, my_slot=None):
+def draw_game(screen, state, my_slot=None, difficulty="medium"):
     screen.fill(BG_COLOR)
     draw_arena(screen, state)
     draw_title(screen)
@@ -23,6 +23,11 @@ def draw_game(screen, state, my_slot=None):
             draw_projectile(screen, p)
     if state.get("game_over"):
         draw_game_over(screen, state)
+    # Draw aim line for human player based on difficulty
+    if my_slot is not None:
+        for c in state["castles"]:
+            if c["owner"] == my_slot and c.get("human"):
+                draw_aim_line(screen, c, difficulty)
 
 def draw_game_direct(screen, engine, my_slot=None):
     """Render directly from engine state without copying — used in local mode."""
@@ -68,6 +73,11 @@ def draw_game_direct(screen, engine, my_slot=None):
             draw_projectile(screen, p)
     if engine.game_over:
         _draw_game_over_direct(screen, engine)
+    # Draw aim line for human player based on difficulty
+    if my_slot is not None:
+        for c in engine.castles:
+            if c["owner"] == my_slot and c["owner"] in engine.human_players:
+                draw_aim_line(screen, c, engine.difficulty)
 
 def _draw_game_over_direct(screen, engine):
     w = engine.winner
@@ -163,6 +173,46 @@ def draw_cannon(screen, center, angle, owner):
     ]
     pygame.draw.polygon(screen, color, points)
     pygame.draw.circle(screen, (120, 120, 120), (int(sx), int(sy)), CANNON_WIDTH // 2 + 2)
+
+
+def draw_aim_line(screen, castle, difficulty):
+    """Draw aim line from cannon tip showing aim direction.
+    
+    Easy: solid bright line
+    Medium: fainter line (50% alpha)
+    Hard: no line
+    """
+    if difficulty == "hard":
+        return
+    
+    center = castle["center"]
+    angle = castle["cannon_angle"]
+    owner = castle["owner"]
+    
+    # Start from cannon tip (same calculation as draw_cannon)
+    start_dist = CASTLE_SIZE // 2 + 6 + CANNON_LENGTH
+    sx = center[0] + math.cos(angle) * start_dist
+    sy = center[1] + math.sin(angle) * start_dist
+    
+    # Line extends 120 pixels from cannon tip
+    line_length = 120
+    ex = sx + math.cos(angle) * line_length
+    ey = sy + math.sin(angle) * line_length
+    
+    if difficulty == "easy":
+        # Full brightness, solid line
+        color = (255, 255, 100)  # Bright yellow
+        alpha = 255
+    else:  # medium
+        # Fainter, semi-transparent
+        color = (200, 200, 80)
+        alpha = 128
+    
+    # Create surface with alpha for transparency
+    line_surface = pygame.Surface((int(abs(ex - sx)) + 4, int(abs(ey - sy)) + 4), pygame.SRCALPHA)
+    pygame.draw.line(line_surface, (*color, alpha), (2, 2), 
+                     (2 + int(ex - sx), 2 + int(ey - sy)), 2)
+    screen.blit(line_surface, (int(sx) - 2, int(sy) - 2))
 
 # Pre-rendered shield surfaces (created on first use)
 _shield_outline = None
